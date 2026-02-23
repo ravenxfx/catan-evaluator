@@ -15,6 +15,10 @@ export type StartMarker = {
 const RESOURCES: Resource[] = ["holz", "lehm", "schaf", "getreide", "stein", "wueste"];
 const NUMBERS = [2, 3, 4, 5, 6, 8, 9, 10, 11, 12];
 
+// FIXED CANVAS so SVG + overlay align perfectly on Vercel + all screens
+const CANVAS_W = 920;
+const CANVAS_H = 620;
+
 function resIcon(res: Resource | null) {
   switch (res) {
     case "holz":
@@ -205,7 +209,7 @@ function HexHitArea({
         drop.setNodeRef(node);
         drag.setNodeRef(node);
       }}
-      className="absolute pointer-events-auto"
+      className="absolute"
       style={{
         left: cx,
         top: cy,
@@ -222,7 +226,6 @@ function HexHitArea({
         e.stopPropagation();
         onSelect();
       }}
-      // drag handlers ONLY if draggable
       {...(hasRes ? drag.listeners : {})}
       {...(hasRes ? drag.attributes : {})}
     />
@@ -319,8 +322,9 @@ export default function DndBoard({
     }
   }
 
+  // geometry
   const size = 58;
-  const padding = 110;
+  const padding = 90; // internal padding in the canvas coordinate system
 
   const positions = state.tiles.map((t) => {
     const p = axialToPixel(t.q, t.r, size);
@@ -332,10 +336,12 @@ export default function DndBoard({
   const minY = Math.min(...positions.map((p) => p.y));
   const maxY = Math.max(...positions.map((p) => p.y));
 
-  const width = maxX - minX + padding * 2;
-  const height = maxY - minY + padding * 2;
-  const offsetX = padding - minX;
-  const offsetY = padding - minY;
+  // IMPORTANT: Use fixed canvas; offsets center content into this canvas
+  const contentW = maxX - minX + padding * 2;
+  const contentH = maxY - minY + padding * 2;
+
+  const offsetX = (CANVAS_W - contentW) / 2 + padding - minX;
+  const offsetY = (CANVAS_H - contentH) / 2 + padding - minY;
 
   const canEditNumber = !!selectedTile && selectedTile.res !== null && selectedTile.res !== "wueste";
 
@@ -354,6 +360,7 @@ export default function DndBoard({
   return (
     <DndContext onDragEnd={onDragEnd}>
       <div className="space-y-4">
+        {/* tokens row */}
         <div className="flex items-center gap-2 overflow-x-auto flex-nowrap pb-2">
           {RESOURCES.map((r) => (
             <DraggableResourceHex key={r} res={r} count={state.resourcePool[r]} />
@@ -374,171 +381,175 @@ export default function DndBoard({
           </div>
         </div>
 
-        <div data-board-wrap="1" className="relative rounded-2xl border bg-slate-100 shadow-sm p-4 flex justify-center" style={{ minHeight: 640 }}>
-          {selected && selectedCenter && (
-            <div
-              data-popover="num"
-              className="absolute z-20 rounded-2xl border bg-white shadow-lg p-3"
-              style={{
-                left: selectedCenter.cx,
-                top: selectedCenter.cy,
-                transform: "translate(-50%, -120%)",
-                width: 360,
-              }}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-sm font-semibold">Zahl wählen</div>
-                  <div className="text-xs text-slate-500">
-                    {selectedTile ? (
-                      <>
-                        Feld <span className="font-mono font-semibold">{fieldLabel(selectedTile.q, selectedTile.r)}</span>{" "}
-                        {selectedTile.res ? `· ${selectedTile.res}` : ""}
-                      </>
-                    ) : (
-                      "Kein Feld"
-                    )}
+        {/* board */}
+        <div
+          data-board-wrap="1"
+          className="relative rounded-2xl border bg-slate-100 shadow-sm flex justify-center items-center"
+          style={{ minHeight: CANVAS_H + 24 }}
+        >
+          {/* fixed canvas container -> overlay & svg share exact pixels */}
+          <div className="relative" style={{ width: CANVAS_W, height: CANVAS_H }}>
+            {selected && selectedCenter && (
+              <div
+                data-popover="num"
+                className="absolute z-20 rounded-2xl border bg-white shadow-lg p-3"
+                style={{
+                  left: selectedCenter.cx,
+                  top: selectedCenter.cy,
+                  transform: "translate(-50%, -120%)",
+                  width: 360,
+                }}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold">Zahl wählen</div>
+                    <div className="text-xs text-slate-500">
+                      {selectedTile ? (
+                        <>
+                          Feld <span className="font-mono font-semibold">{fieldLabel(selectedTile.q, selectedTile.r)}</span>{" "}
+                          {selectedTile.res ? `· ${selectedTile.res}` : ""}
+                        </>
+                      ) : (
+                        "Kein Feld"
+                      )}
+                    </div>
                   </div>
-                </div>
-                <button
-                  className="text-xs rounded-lg border px-2 py-1"
-                  type="button"
-                  onClick={() => {
-                    setSelected(null);
-                    setSelectedCenter(null);
-                  }}
-                >
-                  ✕
-                </button>
-              </div>
-
-              <div className="mt-2 flex flex-wrap gap-2">
-                <button
-                  className={`rounded-xl border px-3 py-2 text-sm ${
-                    canEditNumber ? "bg-white hover:bg-slate-50" : "opacity-40 cursor-not-allowed"
-                  }`}
-                  type="button"
-                  disabled={!canEditNumber}
-                  onClick={() => {
-                    if (!selectedTile) return;
-                    setState(setNumberOnHex(state, selectedTile.q, selectedTile.r, null));
-                  }}
-                >
-                  leer
-                </button>
-
-                {NUMBERS.map((n) => {
-                  const stock = state.numberPool[n] ?? 0;
-                  const isCurrent = selectedTile?.num === n;
-                  const disabled = !canEditNumber || (!isCurrent && stock <= 0);
-                  const strong = n === 6 || n === 8;
-
-                  return (
-                    <button
-                      key={n}
-                      disabled={disabled}
-                      className={`rounded-xl border px-3 py-2 text-sm font-mono transition ${
-                        disabled ? "opacity-40 cursor-not-allowed" : "bg-white hover:bg-slate-50"
-                      } ${strong ? "text-red-600 font-semibold" : ""} ${isCurrent ? "bg-black text-white hover:bg-black" : ""}`}
-                      type="button"
-                      onClick={() => {
-                        if (!selectedTile) return;
-                        setState(setNumberOnHex(state, selectedTile.q, selectedTile.r, n));
-                      }}
-                    >
-                      {n}
-                      <span className="ml-2 text-xs text-slate-400">{isCurrent ? "" : `×${stock}`}</span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {!canEditNumber && <div className="mt-2 text-xs text-amber-700">Zahlen gehen nur auf Nicht-Wüste Felder.</div>}
-            </div>
-          )}
-
-          {/* HTML overlay: BOTH drop + drag */}
-          <div className="absolute inset-0 flex justify-center" style={{ padding: 16 }}>
-            <div className="relative" style={{ width: "100%", maxWidth: 920, height: 620 }}>
-              {state.tiles.map((t) => {
-                const p = axialToPixel(t.q, t.r, size);
-                const cx = p.x + offsetX;
-                const cy = p.y + offsetY;
-                const isSel = !!selected && selected.q === t.q && selected.r === t.r;
-
-                return (
-                  <HexHitArea
-                    key={`hit-${keyHex(t.q, t.r)}`}
-                    q={t.q}
-                    r={t.r}
-                    cx={cx}
-                    cy={cy}
-                    size={size}
-                    hasRes={!!t.res}
-                    isSelected={isSel}
-                    onSelect={() => {
-                      setSelected({ q: t.q, r: t.r });
-                      setSelectedCenter({ cx, cy });
+                  <button
+                    className="text-xs rounded-lg border px-2 py-1"
+                    type="button"
+                    onClick={() => {
+                      setSelected(null);
+                      setSelectedCenter(null);
                     }}
-                  />
-                );
-              })}
-            </div>
-          </div>
+                  >
+                    ✕
+                  </button>
+                </div>
 
-          {/* SVG render */}
-          <svg viewBox={`0 0 ${width} ${height}`} style={{ width: "100%", maxWidth: 920, height: 620 }}>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button
+                    className={`rounded-xl border px-3 py-2 text-sm ${
+                      canEditNumber ? "bg-white hover:bg-slate-50" : "opacity-40 cursor-not-allowed"
+                    }`}
+                    type="button"
+                    disabled={!canEditNumber}
+                    onClick={() => {
+                      if (!selectedTile) return;
+                      setState(setNumberOnHex(state, selectedTile.q, selectedTile.r, null));
+                    }}
+                  >
+                    leer
+                  </button>
+
+                  {NUMBERS.map((n) => {
+                    const stock = state.numberPool[n] ?? 0;
+                    const isCurrent = selectedTile?.num === n;
+                    const disabled = !canEditNumber || (!isCurrent && stock <= 0);
+                    const strong = n === 6 || n === 8;
+
+                    return (
+                      <button
+                        key={n}
+                        disabled={disabled}
+                        className={`rounded-xl border px-3 py-2 text-sm font-mono transition ${
+                          disabled ? "opacity-40 cursor-not-allowed" : "bg-white hover:bg-slate-50"
+                        } ${strong ? "text-red-600 font-semibold" : ""} ${isCurrent ? "bg-black text-white hover:bg-black" : ""}`}
+                        type="button"
+                        onClick={() => {
+                          if (!selectedTile) return;
+                          setState(setNumberOnHex(state, selectedTile.q, selectedTile.r, n));
+                        }}
+                      >
+                        {n}
+                        <span className="ml-2 text-xs text-slate-400">{isCurrent ? "" : `×${stock}`}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {!canEditNumber && <div className="mt-2 text-xs text-amber-700">Zahlen gehen nur auf Nicht-Wüste Felder.</div>}
+              </div>
+            )}
+
+            {/* overlay hit areas */}
             {state.tiles.map((t) => {
               const p = axialToPixel(t.q, t.r, size);
               const cx = p.x + offsetX;
               const cy = p.y + offsetY;
-              const poly = hexPolygon(cx, cy, size);
-
               const isSel = !!selected && selected.q === t.q && selected.r === t.r;
 
               return (
-                <g key={keyHex(t.q, t.r)}>
-                  <polygon points={poly} fill={resColor(t.res)} stroke={isSel ? "#111" : "#2b2b2b"} strokeWidth={isSel ? 3 : 1.2} />
-
-                  <text x={cx} y={cy - 26} textAnchor="middle" fontSize="11" fill="#111" pointerEvents="none">
-                    {fieldLabel(t.q, t.r)}
-                  </text>
-
-                  <text x={cx} y={cy - 4} textAnchor="middle" fontSize="22" pointerEvents="none">
-                    {resIcon(t.res)}
-                  </text>
-
-                  <circle cx={cx} cy={cy + 22} r={15} fill="#fff" stroke="#111" strokeWidth={1} pointerEvents="none" />
-                  <text
-                    x={cx}
-                    y={cy + 26}
-                    textAnchor="middle"
-                    fontSize="12"
-                    fill={pipStrong(t.num) ? "#dc2626" : "#111"}
-                    fontWeight={pipStrong(t.num) ? "800" : "600"}
-                    pointerEvents="none"
-                  >
-                    {t.num ?? ""}
-                  </text>
-                </g>
+                <HexHitArea
+                  key={`hit-${keyHex(t.q, t.r)}`}
+                  q={t.q}
+                  r={t.r}
+                  cx={cx}
+                  cy={cy}
+                  size={size}
+                  hasRes={!!t.res}
+                  isSelected={isSel}
+                  onSelect={() => {
+                    setSelected({ q: t.q, r: t.r });
+                    setSelectedCenter({ cx, cy });
+                  }}
+                />
               );
             })}
 
-            {showMarkers &&
-              (startMarkers ?? []).map((m) => {
-                const mx = m.x + offsetX;
-                const my = m.y + offsetY;
+            {/* SVG render (same fixed pixel box) */}
+            <svg width={CANVAS_W} height={CANVAS_H} viewBox={`0 0 ${CANVAS_W} ${CANVAS_H}`} className="absolute inset-0">
+              {state.tiles.map((t) => {
+                const p = axialToPixel(t.q, t.r, size);
+                const cx = p.x + offsetX;
+                const cy = p.y + offsetY;
+                const poly = hexPolygon(cx, cy, size);
+
+                const isSel = !!selected && selected.q === t.q && selected.r === t.r;
+
                 return (
-                  <g key={m.id}>
-                    <circle cx={mx} cy={my} r={13} fill="#111" opacity={0.92} />
-                    <circle cx={mx} cy={my} r={14} fill="transparent" stroke="#fff" strokeWidth={1.8} opacity={0.95} />
-                    <text x={mx} y={my + 4} textAnchor="middle" fontSize="11" fill="#fff" fontWeight={800} pointerEvents="none">
-                      {m.rank}
+                  <g key={keyHex(t.q, t.r)}>
+                    <polygon points={poly} fill={resColor(t.res)} stroke={isSel ? "#111" : "#2b2b2b"} strokeWidth={isSel ? 3 : 1.2} />
+
+                    <text x={cx} y={cy - 26} textAnchor="middle" fontSize="11" fill="#111" pointerEvents="none">
+                      {fieldLabel(t.q, t.r)}
+                    </text>
+
+                    <text x={cx} y={cy - 4} textAnchor="middle" fontSize="22" pointerEvents="none">
+                      {resIcon(t.res)}
+                    </text>
+
+                    <circle cx={cx} cy={cy + 22} r={15} fill="#fff" stroke="#111" strokeWidth={1} pointerEvents="none" />
+                    <text
+                      x={cx}
+                      y={cy + 26}
+                      textAnchor="middle"
+                      fontSize="12"
+                      fill={pipStrong(t.num) ? "#dc2626" : "#111"}
+                      fontWeight={pipStrong(t.num) ? "800" : "600"}
+                      pointerEvents="none"
+                    >
+                      {t.num ?? ""}
                     </text>
                   </g>
                 );
               })}
-          </svg>
+
+              {showMarkers &&
+                (startMarkers ?? []).map((m) => {
+                  const mx = m.x + offsetX;
+                  const my = m.y + offsetY;
+                  return (
+                    <g key={m.id}>
+                      <circle cx={mx} cy={my} r={13} fill="#111" opacity={0.92} />
+                      <circle cx={mx} cy={my} r={14} fill="transparent" stroke="#fff" strokeWidth={1.8} opacity={0.95} />
+                      <text x={mx} y={my + 4} textAnchor="middle" fontSize="11" fill="#fff" fontWeight={800} pointerEvents="none">
+                        {m.rank}
+                      </text>
+                    </g>
+                  );
+                })}
+            </svg>
+          </div>
         </div>
       </div>
     </DndContext>
