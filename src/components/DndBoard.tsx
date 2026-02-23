@@ -15,14 +15,13 @@ export type StartMarker = {
   id: string;
   rank: number;
   score: number;
-  x: number; // board-local pixel
-  y: number; // board-local pixel
+  x: number;
+  y: number;
 };
 
 const RESOURCES: Resource[] = ["holz", "lehm", "schaf", "getreide", "stein", "wueste"];
 const NUMBERS = [2, 3, 4, 5, 6, 8, 9, 10, 11, 12];
 
-// Fixed logical canvas; we scale it for mobile so overlay & SVG stay aligned
 const CANVAS_W = 920;
 const CANVAS_H = 620;
 
@@ -46,7 +45,6 @@ function resIcon(res: Resource | null) {
 }
 
 function resColor(res: Resource | null) {
-  // a bit punchier
   switch (res) {
     case "holz":
       return "#22c55e";
@@ -153,7 +151,7 @@ function DraggableResourceHex({ res, count }: { res: Resource; count: number }) 
 
   const style: React.CSSProperties = {
     transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
-    opacity: disabled ? 0.35 : isDragging ? 0.35 : 1, // lower because overlay shows the "real" drag
+    opacity: disabled ? 0.35 : isDragging ? 0.35 : 1,
     cursor: disabled ? "not-allowed" : "grab",
     height: 64,
   };
@@ -207,9 +205,7 @@ function DragPreview({ res, label }: { res: Resource; label?: string }) {
       >
         {resIcon(res)}
       </div>
-      {label ? (
-        <div className="mt-1 text-center text-xs font-semibold text-slate-800">{label}</div>
-      ) : null}
+      {label ? <div className="mt-1 text-center text-xs font-semibold text-slate-800">{label}</div> : null}
     </div>
   );
 }
@@ -257,7 +253,6 @@ function HexHitArea({
         outline: isSelected ? "3px solid #111" : "none",
         borderRadius: 16,
         cursor: hasRes ? "grab" : "pointer",
-        // mobile tap feel
         touchAction: "none",
       }}
       onPointerDown={(e) => {
@@ -284,39 +279,36 @@ export default function DndBoard({
   const [selected, setSelected] = React.useState<{ q: number; r: number } | null>(null);
   const [selectedCenter, setSelectedCenter] = React.useState<{ cx: number; cy: number } | null>(null);
 
-  // drag overlay state
   const [activeDragRes, setActiveDragRes] = React.useState<Resource | null>(null);
   const [activeDragLabel, setActiveDragLabel] = React.useState<string | undefined>(undefined);
+
+  const hostRef = React.useRef<HTMLDivElement | null>(null);
+  const [scale, setScale] = React.useState(1);
+
+  // ✅ SAFE scaling: no ResizeObserver (prevents runtime crash)
+  React.useEffect(() => {
+    function recompute() {
+      const el = hostRef.current;
+      if (!el) return;
+      const w = el.clientWidth;
+      const s = Math.min(1, (w - 12) / CANVAS_W);
+      setScale(Number.isFinite(s) ? Math.max(0.55, s) : 1);
+    }
+
+    recompute();
+    window.addEventListener("resize", recompute);
+    return () => window.removeEventListener("resize", recompute);
+  }, []);
 
   const selectedTile = React.useMemo(() => {
     if (!selected) return null;
     return state.tiles.find((t) => t.q === selected.q && t.r === selected.r) ?? null;
   }, [selected, state.tiles]);
 
-  // responsive scaling (mobile)
-  const hostRef = React.useRef<HTMLDivElement | null>(null);
-  const [scale, setScale] = React.useState(1);
-
-  React.useLayoutEffect(() => {
-    const el = hostRef.current;
-    if (!el) return;
-
-    const ro = new ResizeObserver(() => {
-      const w = el.clientWidth;
-      const s = Math.min(1, (w - 12) / CANVAS_W); // small margin
-      setScale(Number.isFinite(s) ? Math.max(0.5, s) : 1); // do not go too small
-    });
-
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-
-  // better: use overlay instead of relying on "moving element"
   useDndMonitor({
     onDragStart({ active }) {
       const id = String(active.id);
 
-      // dragging from pool
       if (id.startsWith("poolres:")) {
         const res = id.split(":")[1] as Resource;
         setActiveDragRes(res);
@@ -324,7 +316,6 @@ export default function DndBoard({
         return;
       }
 
-      // dragging from board
       if (id.startsWith("hexres:")) {
         const coord = id.split(":")[1];
         const { q, r } = parseCoord(coord);
@@ -351,7 +342,6 @@ export default function DndBoard({
     const overId = e.over ? String(e.over.id) : null;
     if (!overId) return;
 
-    // return from board -> pool
     if (overId === "pooldrop:res" && activeId.startsWith("hexres:")) {
       const coord = activeId.split(":")[1];
       const { q, r } = parseCoord(coord);
@@ -376,19 +366,16 @@ export default function DndBoard({
       return;
     }
 
-    // drop on tile
     if (overId.startsWith("targetres:")) {
       const coord = overId.split(":")[1];
       const { q, r } = parseCoord(coord);
 
-      // pool -> tile
       if (activeId.startsWith("poolres:")) {
         const res = activeId.split(":")[1] as Resource;
         setState(placeResource(state, q, r, res));
         return;
       }
 
-      // tile -> tile swap
       if (activeId.startsWith("hexres:")) {
         const fromCoord = activeId.split(":")[1];
         const { q: fq, r: fr } = parseCoord(fromCoord);
@@ -407,7 +394,6 @@ export default function DndBoard({
         next.tiles[a].res = bRes ?? null;
         next.tiles[b].res = aRes;
 
-        // ensure desert has no number
         for (const t of [next.tiles[a], next.tiles[b]]) {
           if (t.res === "wueste" && t.num !== null) {
             next.numberPool[t.num] = (next.numberPool[t.num] ?? 0) + 1;
@@ -420,7 +406,6 @@ export default function DndBoard({
     }
   }
 
-  // geometry
   const size = 58;
   const padding = 90;
 
@@ -437,13 +422,11 @@ export default function DndBoard({
   const contentW = maxX - minX + padding * 2;
   const contentH = maxY - minY + padding * 2;
 
-  // center into fixed canvas
   const offsetX = (CANVAS_W - contentW) / 2 + padding - minX;
   const offsetY = (CANVAS_H - contentH) / 2 + padding - minY;
 
   const canEditNumber = !!selectedTile && selectedTile.res !== null && selectedTile.res !== "wueste";
 
-  // close popover
   React.useEffect(() => {
     function onDown(e: MouseEvent) {
       const el = e.target as HTMLElement;
@@ -459,7 +442,6 @@ export default function DndBoard({
   return (
     <DndContext onDragEnd={onDragEnd}>
       <div className="space-y-3">
-        {/* resources row – tighter for mobile */}
         <div className="flex items-center gap-2 overflow-x-auto flex-nowrap pb-1">
           {RESOURCES.map((r) => (
             <DraggableResourceHex key={r} res={r} count={state.resourcePool[r]} />
@@ -480,18 +462,12 @@ export default function DndBoard({
           </div>
         </div>
 
-        {/* board wrapper */}
         <div
           data-board-wrap="1"
           ref={hostRef}
           className="relative rounded-2xl border bg-slate-100 shadow-sm flex justify-center"
-          style={{
-            // less empty space; height follows scaled canvas
-            padding: 10,
-            overflow: "visible", // IMPORTANT so overlay/drag never clips
-          }}
+          style={{ padding: 10, overflow: "visible" }}
         >
-          {/* scaled fixed-canvas */}
           <div
             className="relative"
             style={{
@@ -501,7 +477,6 @@ export default function DndBoard({
               transformOrigin: "top center",
             }}
           >
-            {/* number popover */}
             {selected && selectedCenter && (
               <div
                 data-popover="num"
@@ -581,12 +556,9 @@ export default function DndBoard({
                     );
                   })}
                 </div>
-
-                {!canEditNumber && <div className="mt-2 text-xs text-amber-700">Zahlen gehen nur auf Nicht-Wüste Felder.</div>}
               </div>
             )}
 
-            {/* hit areas (drop + drag on HTML) */}
             {state.tiles.map((t) => {
               const p = axialToPixel(t.q, t.r, size);
               const cx = p.x + offsetX;
@@ -611,13 +583,7 @@ export default function DndBoard({
               );
             })}
 
-            {/* SVG render */}
-            <svg
-              width={CANVAS_W}
-              height={CANVAS_H}
-              viewBox={`0 0 ${CANVAS_W} ${CANVAS_H}`}
-              className="absolute inset-0"
-            >
+            <svg width={CANVAS_W} height={CANVAS_H} viewBox={`0 0 ${CANVAS_W} ${CANVAS_H}`} className="absolute inset-0">
               {state.tiles.map((t) => {
                 const p = axialToPixel(t.q, t.r, size);
                 const cx = p.x + offsetX;
@@ -628,15 +594,12 @@ export default function DndBoard({
                 return (
                   <g key={keyHex(t.q, t.r)}>
                     <polygon points={poly} fill={resColor(t.res)} stroke={isSel ? "#111" : "#2b2b2b"} strokeWidth={isSel ? 3 : 1.2} />
-
                     <text x={cx} y={cy - 26} textAnchor="middle" fontSize="11" fill="#111" pointerEvents="none">
                       {fieldLabel(t.q, t.r)}
                     </text>
-
                     <text x={cx} y={cy - 4} textAnchor="middle" fontSize="22" pointerEvents="none">
                       {resIcon(t.res)}
                     </text>
-
                     <circle cx={cx} cy={cy + 22} r={15} fill="#fff" stroke="#111" strokeWidth={1} pointerEvents="none" />
                     <text
                       x={cx}
@@ -652,25 +615,9 @@ export default function DndBoard({
                   </g>
                 );
               })}
-
-              {showMarkers &&
-                (startMarkers ?? []).map((m) => {
-                  const mx = m.x + offsetX;
-                  const my = m.y + offsetY;
-                  return (
-                    <g key={m.id}>
-                      <circle cx={mx} cy={my} r={13} fill="#111" opacity={0.92} />
-                      <circle cx={mx} cy={my} r={14} fill="transparent" stroke="#fff" strokeWidth={1.8} opacity={0.95} />
-                      <text x={mx} y={my + 4} textAnchor="middle" fontSize="11" fill="#fff" fontWeight={800} pointerEvents="none">
-                        {m.rank}
-                      </text>
-                    </g>
-                  );
-                })}
             </svg>
           </div>
 
-          {/* IMPORTANT: drag overlay is outside scaled canvas, rendered in portal -> always visible */}
           <DragOverlay adjustScale={false} dropAnimation={null}>
             {activeDragRes ? <DragPreview res={activeDragRes} label={activeDragLabel} /> : null}
           </DragOverlay>
