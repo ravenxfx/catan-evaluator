@@ -174,6 +174,61 @@ function DraggableResourceHex({ res, count }: { res: Resource; count: number }) 
   );
 }
 
+function HexHitArea({
+  q,
+  r,
+  cx,
+  cy,
+  size,
+  hasRes,
+  isSelected,
+  onSelect,
+}: {
+  q: number;
+  r: number;
+  cx: number;
+  cy: number;
+  size: number;
+  hasRes: boolean;
+  isSelected: boolean;
+  onSelect: () => void;
+}) {
+  const targetId = `targetres:${q},${r}`;
+  const dragId = `hexres:${q},${r}`;
+
+  const drop = useDroppable({ id: targetId });
+  const drag = useDraggable({ id: dragId, disabled: !hasRes });
+
+  return (
+    <div
+      ref={(node) => {
+        drop.setNodeRef(node);
+        drag.setNodeRef(node);
+      }}
+      className="absolute pointer-events-auto"
+      style={{
+        left: cx,
+        top: cy,
+        width: size * 1.9,
+        height: size * 1.9,
+        transform: "translate(-50%, -50%)",
+        clipPath: "polygon(25% 6.7%, 75% 6.7%, 100% 50%, 75% 93.3%, 25% 93.3%, 0% 50%)",
+        background: drop.isOver ? "rgba(0,0,0,0.08)" : "transparent",
+        outline: isSelected ? "3px solid #111" : "none",
+        borderRadius: 16,
+        cursor: hasRes ? "grab" : "pointer",
+      }}
+      onMouseDown={(e) => {
+        e.stopPropagation();
+        onSelect();
+      }}
+      // drag handlers ONLY if draggable
+      {...(hasRes ? drag.listeners : {})}
+      {...(hasRes ? drag.attributes : {})}
+    />
+  );
+}
+
 export default function DndBoard({
   state,
   setState,
@@ -264,7 +319,6 @@ export default function DndBoard({
     }
   }
 
-  // geometry
   const size = 58;
   const padding = 110;
 
@@ -285,12 +339,11 @@ export default function DndBoard({
 
   const canEditNumber = !!selectedTile && selectedTile.res !== null && selectedTile.res !== "wueste";
 
-  // close popover on outside click
   React.useEffect(() => {
     function onDown(e: MouseEvent) {
       const el = e.target as HTMLElement;
       if (el.closest?.("[data-popover='num']")) return;
-      if (el.closest?.("[data-board-wrap='1']")) return; // clicks inside board area ok
+      if (el.closest?.("[data-board-wrap='1']")) return;
       setSelected(null);
       setSelectedCenter(null);
     }
@@ -301,7 +354,6 @@ export default function DndBoard({
   return (
     <DndContext onDragEnd={onDragEnd}>
       <div className="space-y-4">
-        {/* top draggable resources: ONE ROW */}
         <div className="flex items-center gap-2 overflow-x-auto flex-nowrap pb-2">
           {RESOURCES.map((r) => (
             <DraggableResourceHex key={r} res={r} count={state.resourcePool[r]} />
@@ -314,21 +366,15 @@ export default function DndBoard({
             className={`rounded-2xl border px-4 py-3 text-sm bg-white shadow-sm shrink-0 ${
               poolReturn.isOver ? "ring-2 ring-black" : ""
             }`}
-            title="Rohstoff vom Board hierher ziehen → zurück in den Pool"
             style={{ height: 72 }}
+            title="Rohstoff vom Board hierher ziehen → zurück in den Pool"
           >
             ↩︎ Zurücklegen
             <div className="text-xs text-slate-500">drag vom Feld → hier</div>
           </div>
         </div>
 
-        {/* Board wrapper: overlay grid for droppables (HTML), SVG for rendering */}
-        <div
-          data-board-wrap="1"
-          className="relative rounded-2xl border bg-slate-100 shadow-sm p-4 flex justify-center"
-          style={{ minHeight: 640 }}
-        >
-          {/* number popover */}
+        <div data-board-wrap="1" className="relative rounded-2xl border bg-slate-100 shadow-sm p-4 flex justify-center" style={{ minHeight: 640 }}>
           {selected && selectedCenter && (
             <div
               data-popover="num"
@@ -354,7 +400,14 @@ export default function DndBoard({
                     )}
                   </div>
                 </div>
-                <button className="text-xs rounded-lg border px-2 py-1" type="button" onClick={() => { setSelected(null); setSelectedCenter(null); }}>
+                <button
+                  className="text-xs rounded-lg border px-2 py-1"
+                  type="button"
+                  onClick={() => {
+                    setSelected(null);
+                    setSelectedCenter(null);
+                  }}
+                >
                   ✕
                 </button>
               </div>
@@ -404,42 +457,26 @@ export default function DndBoard({
             </div>
           )}
 
-          {/* HTML overlay for droppables (this fixes the TS error on Vercel) */}
-          <div
-            className="absolute inset-0 pointer-events-none flex justify-center"
-            style={{ padding: 16 }}
-          >
-            <div
-              className="relative pointer-events-none"
-              style={{ width: "100%", maxWidth: 920, height: 620 }}
-            >
+          {/* HTML overlay: BOTH drop + drag */}
+          <div className="absolute inset-0 flex justify-center" style={{ padding: 16 }}>
+            <div className="relative" style={{ width: "100%", maxWidth: 920, height: 620 }}>
               {state.tiles.map((t) => {
                 const p = axialToPixel(t.q, t.r, size);
                 const cx = p.x + offsetX;
                 const cy = p.y + offsetY;
+                const isSel = !!selected && selected.q === t.q && selected.r === t.r;
 
-                const targetId = `targetres:${t.q},${t.r}`;
-                const drop = useDroppable({ id: targetId });
-
-                // droppable must be HTMLElement => we render a div as hit-area
                 return (
-                  <div
-                    key={`drop-${keyHex(t.q, t.r)}`}
-                    ref={drop.setNodeRef}
-                    className="absolute pointer-events-auto"
-                    style={{
-                      left: cx,
-                      top: cy,
-                      width: size * 1.9,
-                      height: size * 1.9,
-                      transform: "translate(-50%, -50%)",
-                      clipPath: "polygon(25% 6.7%, 75% 6.7%, 100% 50%, 75% 93.3%, 25% 93.3%, 0% 50%)",
-                      background: drop.isOver ? "rgba(0,0,0,0.08)" : "transparent",
-                      borderRadius: 16,
-                    }}
-                    onMouseDown={(e) => {
-                      // selection + popover anchor
-                      e.stopPropagation();
+                  <HexHitArea
+                    key={`hit-${keyHex(t.q, t.r)}`}
+                    q={t.q}
+                    r={t.r}
+                    cx={cx}
+                    cy={cy}
+                    size={size}
+                    hasRes={!!t.res}
+                    isSelected={isSel}
+                    onSelect={() => {
                       setSelected({ q: t.q, r: t.r });
                       setSelectedCenter({ cx, cy });
                     }}
@@ -449,41 +486,19 @@ export default function DndBoard({
             </div>
           </div>
 
-          {/* SVG render layer */}
+          {/* SVG render */}
           <svg viewBox={`0 0 ${width} ${height}`} style={{ width: "100%", maxWidth: 920, height: 620 }}>
             {state.tiles.map((t) => {
-              const dragId = `hexres:${t.q},${t.r}`;
-              const drag = useDraggable({ id: dragId, disabled: !t.res });
-
               const p = axialToPixel(t.q, t.r, size);
               const cx = p.x + offsetX;
               const cy = p.y + offsetY;
               const poly = hexPolygon(cx, cy, size);
 
-              const dragStyle: React.CSSProperties = {
-                cursor: t.res ? "grab" : "pointer",
-                opacity: drag.isDragging ? 0.78 : 1,
-                transform: drag.transform ? `translate3d(${drag.transform.x}px, ${drag.transform.y}px, 0)` : undefined,
-              };
-
               const isSel = !!selected && selected.q === t.q && selected.r === t.r;
 
               return (
                 <g key={keyHex(t.q, t.r)}>
-                  <polygon
-                    ref={drag.setNodeRef}
-                    points={poly}
-                    fill={resColor(t.res)}
-                    stroke={isSel ? "#111" : "#2b2b2b"}
-                    strokeWidth={isSel ? 3 : 1.2}
-                    style={dragStyle}
-                    {...(t.res ? drag.listeners : {})}
-                    {...(t.res ? drag.attributes : {})}
-                    onClick={() => {
-                      setSelected({ q: t.q, r: t.r });
-                      setSelectedCenter({ cx, cy });
-                    }}
-                  />
+                  <polygon points={poly} fill={resColor(t.res)} stroke={isSel ? "#111" : "#2b2b2b"} strokeWidth={isSel ? 3 : 1.2} />
 
                   <text x={cx} y={cy - 26} textAnchor="middle" fontSize="11" fill="#111" pointerEvents="none">
                     {fieldLabel(t.q, t.r)}
@@ -509,7 +524,6 @@ export default function DndBoard({
               );
             })}
 
-            {/* markers */}
             {showMarkers &&
               (startMarkers ?? []).map((m) => {
                 const mx = m.x + offsetX;
