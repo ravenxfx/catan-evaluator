@@ -1,8 +1,7 @@
 "use client";
 
 import React from "react";
-import BoardEditor from "@/components/BoardEditor";
-import type { Tile } from "@/lib/catan/score";
+import BoardEditor, { Tile } from "@/components/BoardEditor";
 
 function createDefaultTiles(): Tile[] {
   // Standard Catan board: hex radius 2 => 19 tiles
@@ -16,9 +15,9 @@ function createDefaultTiles(): Tile[] {
         tiles.push({
           q,
           r,
-          res: null,
+          res: "", // ✅ BoardEditor erwartet string (nicht null)
           num: null,
-        } as Tile);
+        });
       }
     }
   }
@@ -31,30 +30,26 @@ function createDefaultTiles(): Tile[] {
 export default function Page() {
   const [tiles, setTiles] = React.useState<Tile[]>(() => createDefaultTiles());
 
-  // Optional: keep board in localStorage (nice for mobile reloads)
+  // optional persistence
   React.useEffect(() => {
     try {
       const raw = localStorage.getItem("catan_tiles_v1");
       if (!raw) return;
       const parsed = JSON.parse(raw) as Tile[];
       if (Array.isArray(parsed) && parsed.length === 19) setTiles(parsed);
-    } catch {
-      // ignore
-    }
+    } catch {}
   }, []);
 
   React.useEffect(() => {
     try {
       localStorage.setItem("catan_tiles_v1", JSON.stringify(tiles));
-    } catch {
-      // ignore
-    }
+    } catch {}
   }, [tiles]);
 
   return (
     <main className="min-h-screen bg-slate-50">
       <div className="mx-auto w-full max-w-6xl px-3 py-3 sm:px-4 sm:py-4">
-        {/* Topbar (tight) */}
+        {/* Topbar */}
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
             <div className="text-lg sm:text-xl font-semibold tracking-tight truncate">
@@ -82,14 +77,12 @@ export default function Page() {
           </div>
         </div>
 
-        {/* Content: mobile 1 col, desktop 2 col */}
+        {/* Content */}
         <div className="mt-3 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-3">
-          {/* Main editor card */}
           <div className="rounded-3xl border bg-white shadow-sm p-2 sm:p-3">
             <BoardEditor tiles={tiles} onChange={setTiles} />
           </div>
 
-          {/* Side column (optional UI later: metrics, ranking, supabase, premium) */}
           <aside className="space-y-3">
             <div className="rounded-3xl border bg-white shadow-sm p-3">
               <div className="text-sm font-semibold">Bedienung</div>
@@ -104,7 +97,7 @@ export default function Page() {
             <div className="rounded-3xl border bg-white shadow-sm p-3">
               <div className="text-sm font-semibold">Nächster Schritt</div>
               <div className="mt-2 text-sm text-slate-600">
-                Als nächstes: Boards speichern & öffentlich ranken mit <span className="font-semibold">Supabase</span>.
+                Supabase: Boards speichern & öffentlich ranken.
               </div>
             </div>
           </aside>
