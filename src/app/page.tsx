@@ -2,63 +2,116 @@
 
 import React from "react";
 import BoardEditor from "@/components/BoardEditor";
+import type { Tile } from "@/lib/catan/score";
+
+function createDefaultTiles(): Tile[] {
+  // Standard Catan board: hex radius 2 => 19 tiles
+  const tiles: Tile[] = [];
+  const R = 2;
+
+  for (let q = -R; q <= R; q++) {
+    for (let r = -R; r <= R; r++) {
+      const s = -q - r;
+      if (Math.max(Math.abs(q), Math.abs(r), Math.abs(s)) <= R) {
+        tiles.push({
+          q,
+          r,
+          res: null,
+          num: null,
+        } as Tile);
+      }
+    }
+  }
+
+  // Stable order: rows top->bottom, within row left->right
+  tiles.sort((a, b) => (a.r !== b.r ? a.r - b.r : a.q - b.q));
+  return tiles;
+}
 
 export default function Page() {
+  const [tiles, setTiles] = React.useState<Tile[]>(() => createDefaultTiles());
+
+  // Optional: keep board in localStorage (nice for mobile reloads)
+  React.useEffect(() => {
+    try {
+      const raw = localStorage.getItem("catan_tiles_v1");
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as Tile[];
+      if (Array.isArray(parsed) && parsed.length === 19) setTiles(parsed);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  React.useEffect(() => {
+    try {
+      localStorage.setItem("catan_tiles_v1", JSON.stringify(tiles));
+    } catch {
+      // ignore
+    }
+  }, [tiles]);
+
   return (
     <main className="min-h-screen bg-slate-50">
       <div className="mx-auto w-full max-w-6xl px-3 py-3 sm:px-4 sm:py-4">
-        {/* top bar */}
+        {/* Topbar (tight) */}
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <div className="text-lg sm:text-xl font-semibold tracking-tight truncate">Catan Evaluator</div>
+            <div className="text-lg sm:text-xl font-semibold tracking-tight truncate">
+              Catan Evaluator
+            </div>
             <div className="text-xs sm:text-sm text-slate-500 truncate">
-              Board bauen → Zahlen setzen → Balance & Startspots
+              Board bauen → Zahlen wählen → Balance & Startspots
             </div>
           </div>
 
-          {/* optional: later add login/premium badge here */}
           <div className="flex items-center gap-2 shrink-0">
-            <a
+            <button
+              type="button"
               className="rounded-xl border bg-white px-3 py-2 text-sm shadow-sm hover:shadow-md transition"
-              href="https://github.com/ravenxfx/catan-evaluator"
-              target="_blank"
-              rel="noreferrer"
+              onClick={() => {
+                setTiles(createDefaultTiles());
+                try {
+                  localStorage.removeItem("catan_tiles_v1");
+                } catch {}
+              }}
+              title="Board zurücksetzen"
             >
-              GitHub
-            </a>
+              Reset
+            </button>
           </div>
         </div>
 
-        {/* content */}
+        {/* Content: mobile 1 col, desktop 2 col */}
         <div className="mt-3 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-3">
-          {/* left: main editor */}
+          {/* Main editor card */}
           <div className="rounded-3xl border bg-white shadow-sm p-2 sm:p-3">
-            <BoardEditor />
+            <BoardEditor tiles={tiles} onChange={setTiles} />
           </div>
 
-          {/* right: side panels (placeholder) */}
+          {/* Side column (optional UI later: metrics, ranking, supabase, premium) */}
           <aside className="space-y-3">
             <div className="rounded-3xl border bg-white shadow-sm p-3">
-              <div className="text-sm font-semibold">Tipps</div>
+              <div className="text-sm font-semibold">Bedienung</div>
               <ul className="mt-2 text-sm text-slate-600 space-y-1 list-disc pl-5">
-                <li>Tippe ein Feld an → Zahl auswählen</li>
-                <li>Rohstoff ziehen → aufs Feld drop</li>
-                <li>Feld-Rohstoff ziehen → auf anderes Feld (Swap)</li>
-                <li>Feld-Rohstoff ziehen → „Zurücklegen“</li>
+                <li>Rohstoff oben ziehen → aufs Feld droppen</li>
+                <li>Feld antippen → Zahl auswählen</li>
+                <li>Rohstoff vom Feld ziehen → anderes Feld (Swap)</li>
+                <li>Rohstoff vom Feld → „Zurücklegen“</li>
               </ul>
             </div>
 
             <div className="rounded-3xl border bg-white shadow-sm p-3">
               <div className="text-sm font-semibold">Nächster Schritt</div>
               <div className="mt-2 text-sm text-slate-600">
-                Als nächstes speichern & ranken wir Boards mit <span className="font-semibold">Supabase</span>.
+                Als nächstes: Boards speichern & öffentlich ranken mit <span className="font-semibold">Supabase</span>.
               </div>
             </div>
           </aside>
         </div>
 
         <div className="mt-4 text-xs text-slate-400">
-          Made for desktop + mobile · Drag & Drop optimized · Next.js
+          Mobile-first · Drag & Drop smooth · Next.js on Vercel
         </div>
       </div>
     </main>
