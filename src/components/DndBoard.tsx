@@ -35,20 +35,19 @@ function resIcon(res: Resource | null) {
 }
 
 function resColor(res: Resource | null) {
-  // knalliger
   switch (res) {
     case "holz":
-      return "#4ADE80"; // green
+      return "#4ADE80";
     case "lehm":
-      return "#FB923C"; // orange
+      return "#FB923C";
     case "schaf":
-      return "#A3E635"; // lime
+      return "#A3E635";
     case "getreide":
-      return "#FACC15"; // yellow
+      return "#FACC15";
     case "stein":
-      return "#E5E7EB"; // gray
+      return "#E5E7EB";
     case "wueste":
-      return "#FDBA74"; // sand
+      return "#FDBA74";
     default:
       return "#FFFFFF";
   }
@@ -108,7 +107,6 @@ function setNumberOnHex(state: BoardState, q: number, r: number, nextNum: number
 
   const oldNum = tile.num;
 
-  // return old number to pool
   if (oldNum !== null) next.numberPool[oldNum] = (next.numberPool[oldNum] ?? 0) + 1;
 
   if (nextNum === null) {
@@ -116,9 +114,7 @@ function setNumberOnHex(state: BoardState, q: number, r: number, nextNum: number
     return next;
   }
 
-  // available?
   if ((next.numberPool[nextNum] ?? 0) <= 0 && oldNum !== nextNum) {
-    // revert
     if (oldNum !== null) {
       next.numberPool[oldNum] = (next.numberPool[oldNum] ?? 0) - 1;
       tile.num = oldNum;
@@ -133,7 +129,6 @@ function setNumberOnHex(state: BoardState, q: number, r: number, nextNum: number
   return next;
 }
 
-/** ---------- Draggable token ---------- */
 function DraggableResourceHex({ res, count }: { res: Resource; count: number }) {
   const id = `poolres:${res}`;
   const disabled = count <= 0;
@@ -179,81 +174,6 @@ function DraggableResourceHex({ res, count }: { res: Resource; count: number }) 
   );
 }
 
-/** ---------- Hex cell ---------- */
-function HexCell({
-  tile,
-  size,
-  offsetX,
-  offsetY,
-  selected,
-  onSelect,
-}: {
-  tile: { q: number; r: number; res: Resource | null; num: number | null };
-  size: number;
-  offsetX: number;
-  offsetY: number;
-  selected: boolean;
-  onSelect: (cx: number, cy: number) => void;
-}) {
-  const targetId = `targetres:${tile.q},${tile.r}`;
-  const dragId = `hexres:${tile.q},${tile.r}`;
-
-  const drop = useDroppable({ id: targetId });
-  const drag = useDraggable({ id: dragId, disabled: !tile.res });
-
-  const p = axialToPixel(tile.q, tile.r, size);
-  const cx = p.x + offsetX;
-  const cy = p.y + offsetY;
-
-  const poly = hexPolygon(cx, cy, size);
-
-  const dragStyle: React.CSSProperties = {
-    cursor: tile.res ? "grab" : "pointer",
-    opacity: drag.isDragging ? 0.78 : 1,
-    transform: drag.transform ? `translate3d(${drag.transform.x}px, ${drag.transform.y}px, 0)` : undefined,
-  };
-
-  return (
-    <g>
-      <polygon
-        ref={(node) => {
-          drop.setNodeRef(node);
-          drag.setNodeRef(node);
-        }}
-        points={poly}
-        fill={resColor(tile.res)}
-        stroke={selected ? "#111" : drop.isOver ? "#111" : "#2b2b2b"}
-        strokeWidth={selected || drop.isOver ? 3 : 1.2}
-        style={dragStyle}
-        {...(tile.res ? drag.listeners : {})}
-        {...(tile.res ? drag.attributes : {})}
-        onClick={() => onSelect(cx, cy)}
-      />
-
-      <text x={cx} y={cy - 26} textAnchor="middle" fontSize="11" fill="#111" pointerEvents="none">
-        {fieldLabel(tile.q, tile.r)}
-      </text>
-
-      <text x={cx} y={cy - 4} textAnchor="middle" fontSize="22" pointerEvents="none">
-        {resIcon(tile.res)}
-      </text>
-
-      <circle cx={cx} cy={cy + 22} r={15} fill="#fff" stroke="#111" strokeWidth={1} pointerEvents="none" />
-      <text
-        x={cx}
-        y={cy + 26}
-        textAnchor="middle"
-        fontSize="12"
-        fill={pipStrong(tile.num) ? "#dc2626" : "#111"}
-        fontWeight={pipStrong(tile.num) ? "800" : "600"}
-        pointerEvents="none"
-      >
-        {tile.num ?? ""}
-      </text>
-    </g>
-  );
-}
-
 export default function DndBoard({
   state,
   setState,
@@ -265,7 +185,8 @@ export default function DndBoard({
   startMarkers?: StartMarker[];
   showMarkers?: boolean;
 }) {
-  const [selected, setSelected] = React.useState<{ q: number; r: number; cx: number; cy: number } | null>(null);
+  const [selected, setSelected] = React.useState<{ q: number; r: number } | null>(null);
+  const [selectedCenter, setSelectedCenter] = React.useState<{ cx: number; cy: number } | null>(null);
 
   const selectedTile = React.useMemo(() => {
     if (!selected) return null;
@@ -279,7 +200,6 @@ export default function DndBoard({
     const overId = e.over ? String(e.over.id) : null;
     if (!overId) return;
 
-    // return-to-pool
     if (overId === "pooldrop:res" && activeId.startsWith("hexres:")) {
       const coord = activeId.split(":")[1];
       const { q, r } = parseCoord(coord);
@@ -304,7 +224,6 @@ export default function DndBoard({
       return;
     }
 
-    // place / swap
     if (overId.startsWith("targetres:")) {
       const coord = overId.split(":")[1];
       const { q, r } = parseCoord(coord);
@@ -333,7 +252,6 @@ export default function DndBoard({
         next.tiles[a].res = bRes ?? null;
         next.tiles[b].res = aRes;
 
-        // desert cannot have number
         for (const t of [next.tiles[a], next.tiles[b]]) {
           if (t.res === "wueste" && t.num !== null) {
             next.numberPool[t.num] = (next.numberPool[t.num] ?? 0) + 1;
@@ -372,8 +290,9 @@ export default function DndBoard({
     function onDown(e: MouseEvent) {
       const el = e.target as HTMLElement;
       if (el.closest?.("[data-popover='num']")) return;
-      if (el.closest?.("svg")) return; // clicking svg selects tile; don't auto-close
+      if (el.closest?.("[data-board-wrap='1']")) return; // clicks inside board area ok
       setSelected(null);
+      setSelectedCenter(null);
     }
     window.addEventListener("mousedown", onDown);
     return () => window.removeEventListener("mousedown", onDown);
@@ -403,16 +322,20 @@ export default function DndBoard({
           </div>
         </div>
 
-        {/* Board */}
-        <div className="relative rounded-2xl border bg-slate-100 shadow-sm p-4 flex justify-center" style={{ minHeight: 640 }}>
-          {/* Popover for numbers */}
-          {selected && (
+        {/* Board wrapper: overlay grid for droppables (HTML), SVG for rendering */}
+        <div
+          data-board-wrap="1"
+          className="relative rounded-2xl border bg-slate-100 shadow-sm p-4 flex justify-center"
+          style={{ minHeight: 640 }}
+        >
+          {/* number popover */}
+          {selected && selectedCenter && (
             <div
               data-popover="num"
-              className="absolute z-10 rounded-2xl border bg-white shadow-lg p-3"
+              className="absolute z-20 rounded-2xl border bg-white shadow-lg p-3"
               style={{
-                left: selected.cx,
-                top: selected.cy,
+                left: selectedCenter.cx,
+                top: selectedCenter.cy,
                 transform: "translate(-50%, -120%)",
                 width: 360,
               }}
@@ -431,7 +354,7 @@ export default function DndBoard({
                     )}
                   </div>
                 </div>
-                <button className="text-xs rounded-lg border px-2 py-1" type="button" onClick={() => setSelected(null)}>
+                <button className="text-xs rounded-lg border px-2 py-1" type="button" onClick={() => { setSelected(null); setSelectedCenter(null); }}>
                   ✕
                 </button>
               </div>
@@ -477,28 +400,116 @@ export default function DndBoard({
                 })}
               </div>
 
-              {!canEditNumber && (
-                <div className="mt-2 text-xs text-amber-700">
-                  Zahlen gehen nur auf Felder mit Rohstoff (nicht auf Wüste).
-                </div>
-              )}
+              {!canEditNumber && <div className="mt-2 text-xs text-amber-700">Zahlen gehen nur auf Nicht-Wüste Felder.</div>}
             </div>
           )}
 
-          <svg viewBox={`0 0 ${width} ${height}`} style={{ width: "100%", maxWidth: 920, height: 620 }}>
-            {state.tiles.map((t) => (
-              <HexCell
-                key={keyHex(t.q, t.r)}
-                tile={t}
-                size={size}
-                offsetX={offsetX}
-                offsetY={offsetY}
-                selected={!!selected && selected.q === t.q && selected.r === t.r}
-                onSelect={(cx, cy) => setSelected({ q: t.q, r: t.r, cx, cy })}
-              />
-            ))}
+          {/* HTML overlay for droppables (this fixes the TS error on Vercel) */}
+          <div
+            className="absolute inset-0 pointer-events-none flex justify-center"
+            style={{ padding: 16 }}
+          >
+            <div
+              className="relative pointer-events-none"
+              style={{ width: "100%", maxWidth: 920, height: 620 }}
+            >
+              {state.tiles.map((t) => {
+                const p = axialToPixel(t.q, t.r, size);
+                const cx = p.x + offsetX;
+                const cy = p.y + offsetY;
 
-            {/* Markers: board offsets applied here (correct vertices) */}
+                const targetId = `targetres:${t.q},${t.r}`;
+                const drop = useDroppable({ id: targetId });
+
+                // droppable must be HTMLElement => we render a div as hit-area
+                return (
+                  <div
+                    key={`drop-${keyHex(t.q, t.r)}`}
+                    ref={drop.setNodeRef}
+                    className="absolute pointer-events-auto"
+                    style={{
+                      left: cx,
+                      top: cy,
+                      width: size * 1.9,
+                      height: size * 1.9,
+                      transform: "translate(-50%, -50%)",
+                      clipPath: "polygon(25% 6.7%, 75% 6.7%, 100% 50%, 75% 93.3%, 25% 93.3%, 0% 50%)",
+                      background: drop.isOver ? "rgba(0,0,0,0.08)" : "transparent",
+                      borderRadius: 16,
+                    }}
+                    onMouseDown={(e) => {
+                      // selection + popover anchor
+                      e.stopPropagation();
+                      setSelected({ q: t.q, r: t.r });
+                      setSelectedCenter({ cx, cy });
+                    }}
+                  />
+                );
+              })}
+            </div>
+          </div>
+
+          {/* SVG render layer */}
+          <svg viewBox={`0 0 ${width} ${height}`} style={{ width: "100%", maxWidth: 920, height: 620 }}>
+            {state.tiles.map((t) => {
+              const dragId = `hexres:${t.q},${t.r}`;
+              const drag = useDraggable({ id: dragId, disabled: !t.res });
+
+              const p = axialToPixel(t.q, t.r, size);
+              const cx = p.x + offsetX;
+              const cy = p.y + offsetY;
+              const poly = hexPolygon(cx, cy, size);
+
+              const dragStyle: React.CSSProperties = {
+                cursor: t.res ? "grab" : "pointer",
+                opacity: drag.isDragging ? 0.78 : 1,
+                transform: drag.transform ? `translate3d(${drag.transform.x}px, ${drag.transform.y}px, 0)` : undefined,
+              };
+
+              const isSel = !!selected && selected.q === t.q && selected.r === t.r;
+
+              return (
+                <g key={keyHex(t.q, t.r)}>
+                  <polygon
+                    ref={drag.setNodeRef}
+                    points={poly}
+                    fill={resColor(t.res)}
+                    stroke={isSel ? "#111" : "#2b2b2b"}
+                    strokeWidth={isSel ? 3 : 1.2}
+                    style={dragStyle}
+                    {...(t.res ? drag.listeners : {})}
+                    {...(t.res ? drag.attributes : {})}
+                    onClick={() => {
+                      setSelected({ q: t.q, r: t.r });
+                      setSelectedCenter({ cx, cy });
+                    }}
+                  />
+
+                  <text x={cx} y={cy - 26} textAnchor="middle" fontSize="11" fill="#111" pointerEvents="none">
+                    {fieldLabel(t.q, t.r)}
+                  </text>
+
+                  <text x={cx} y={cy - 4} textAnchor="middle" fontSize="22" pointerEvents="none">
+                    {resIcon(t.res)}
+                  </text>
+
+                  <circle cx={cx} cy={cy + 22} r={15} fill="#fff" stroke="#111" strokeWidth={1} pointerEvents="none" />
+                  <text
+                    x={cx}
+                    y={cy + 26}
+                    textAnchor="middle"
+                    fontSize="12"
+                    fill={pipStrong(t.num) ? "#dc2626" : "#111"}
+                    fontWeight={pipStrong(t.num) ? "800" : "600"}
+                    pointerEvents="none"
+                  >
+                    {t.num ?? ""}
+                  </text>
+                </g>
+              );
+            })}
+
+            {/* markers */}
             {showMarkers &&
               (startMarkers ?? []).map((m) => {
                 const mx = m.x + offsetX;
