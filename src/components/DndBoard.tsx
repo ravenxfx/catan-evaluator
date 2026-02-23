@@ -125,7 +125,6 @@ function setNumberOnHex(state: BoardState, q: number, r: number, nextNum: number
   }
 
   if ((next.numberPool[nextNum] ?? 0) <= 0 && oldNum !== nextNum) {
-    // reject
     if (oldNum !== null) {
       next.numberPool[oldNum] = (next.numberPool[oldNum] ?? 0) - 1;
       tile.num = oldNum;
@@ -265,6 +264,43 @@ function HexHitArea({
   );
 }
 
+/** MUST be rendered INSIDE <DndContext> */
+function DndMonitorBridge({
+  state,
+  setActive,
+}: {
+  state: BoardState;
+  setActive: (res: Resource | null, label?: string) => void;
+}) {
+  useDndMonitor({
+    onDragStart({ active }) {
+      const id = String(active.id);
+
+      if (id.startsWith("poolres:")) {
+        const res = id.split(":")[1] as Resource;
+        setActive(res, res);
+        return;
+      }
+
+      if (id.startsWith("hexres:")) {
+        const coord = id.split(":")[1];
+        const { q, r } = parseCoord(coord);
+        const tile = state.tiles.find((t) => t.q === q && t.r === r);
+        const res = (tile?.res ?? null) as Resource | null;
+        setActive(res, tile ? fieldLabel(tile.q, tile.r) : undefined);
+      }
+    },
+    onDragCancel() {
+      setActive(null, undefined);
+    },
+    onDragEnd() {
+      setActive(null, undefined);
+    },
+  });
+
+  return null;
+}
+
 export default function DndBoard({
   state,
   setState,
@@ -285,7 +321,6 @@ export default function DndBoard({
   const hostRef = React.useRef<HTMLDivElement | null>(null);
   const [scale, setScale] = React.useState(1);
 
-  // ✅ SAFE scaling: no ResizeObserver (prevents runtime crash)
   React.useEffect(() => {
     function recompute() {
       const el = hostRef.current;
@@ -304,36 +339,6 @@ export default function DndBoard({
     if (!selected) return null;
     return state.tiles.find((t) => t.q === selected.q && t.r === selected.r) ?? null;
   }, [selected, state.tiles]);
-
-  useDndMonitor({
-    onDragStart({ active }) {
-      const id = String(active.id);
-
-      if (id.startsWith("poolres:")) {
-        const res = id.split(":")[1] as Resource;
-        setActiveDragRes(res);
-        setActiveDragLabel(res);
-        return;
-      }
-
-      if (id.startsWith("hexres:")) {
-        const coord = id.split(":")[1];
-        const { q, r } = parseCoord(coord);
-        const tile = state.tiles.find((t) => t.q === q && t.r === r);
-        const res = (tile?.res ?? null) as Resource | null;
-        setActiveDragRes(res);
-        setActiveDragLabel(tile ? fieldLabel(tile.q, tile.r) : undefined);
-      }
-    },
-    onDragCancel() {
-      setActiveDragRes(null);
-      setActiveDragLabel(undefined);
-    },
-    onDragEnd() {
-      setActiveDragRes(null);
-      setActiveDragLabel(undefined);
-    },
-  });
 
   const poolReturn = useDroppable({ id: "pooldrop:res" });
 
@@ -441,6 +446,15 @@ export default function DndBoard({
 
   return (
     <DndContext onDragEnd={onDragEnd}>
+      {/* 👇 monitor is inside DndContext now */}
+      <DndMonitorBridge
+        state={state}
+        setActive={(res, label) => {
+          setActiveDragRes(res);
+          setActiveDragLabel(label);
+        }}
+      />
+
       <div className="space-y-3">
         <div className="flex items-center gap-2 overflow-x-auto flex-nowrap pb-1">
           {RESOURCES.map((r) => (
