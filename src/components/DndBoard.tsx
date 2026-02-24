@@ -253,6 +253,7 @@ function HexHitArea({
         borderRadius: 16,
         cursor: hasRes ? "grab" : "pointer",
         touchAction: "none",
+        zIndex: 20, // ✅ ensure above SVG
       }}
       onPointerDown={(e) => {
         e.stopPropagation();
@@ -329,7 +330,6 @@ export default function DndBoard({
       const s = Math.min(1, (w - 12) / CANVAS_W);
       setScale(Number.isFinite(s) ? Math.max(0.55, s) : 1);
     }
-
     recompute();
     window.addEventListener("resize", recompute);
     return () => window.removeEventListener("resize", recompute);
@@ -446,7 +446,6 @@ export default function DndBoard({
 
   return (
     <DndContext onDragEnd={onDragEnd}>
-      {/* 👇 monitor is inside DndContext now */}
       <DndMonitorBridge
         state={state}
         setActive={(res, label) => {
@@ -573,6 +572,7 @@ export default function DndBoard({
               </div>
             )}
 
+            {/* ✅ hit areas above svg */}
             {state.tiles.map((t) => {
               const p = axialToPixel(t.q, t.r, size);
               const cx = p.x + offsetX;
@@ -597,7 +597,14 @@ export default function DndBoard({
               );
             })}
 
-            <svg width={CANVAS_W} height={CANVAS_H} viewBox={`0 0 ${CANVAS_W} ${CANVAS_H}`} className="absolute inset-0">
+            {/* ✅ SVG never eats input */}
+            <svg
+              width={CANVAS_W}
+              height={CANVAS_H}
+              viewBox={`0 0 ${CANVAS_W} ${CANVAS_H}`}
+              className="absolute inset-0"
+              style={{ zIndex: 0, pointerEvents: "none" }}
+            >
               {state.tiles.map((t) => {
                 const p = axialToPixel(t.q, t.r, size);
                 const cx = p.x + offsetX;
@@ -608,13 +615,13 @@ export default function DndBoard({
                 return (
                   <g key={keyHex(t.q, t.r)}>
                     <polygon points={poly} fill={resColor(t.res)} stroke={isSel ? "#111" : "#2b2b2b"} strokeWidth={isSel ? 3 : 1.2} />
-                    <text x={cx} y={cy - 26} textAnchor="middle" fontSize="11" fill="#111" pointerEvents="none">
+                    <text x={cx} y={cy - 26} textAnchor="middle" fontSize="11" fill="#111">
                       {fieldLabel(t.q, t.r)}
                     </text>
-                    <text x={cx} y={cy - 4} textAnchor="middle" fontSize="22" pointerEvents="none">
+                    <text x={cx} y={cy - 4} textAnchor="middle" fontSize="22">
                       {resIcon(t.res)}
                     </text>
-                    <circle cx={cx} cy={cy + 22} r={15} fill="#fff" stroke="#111" strokeWidth={1} pointerEvents="none" />
+                    <circle cx={cx} cy={cy + 22} r={15} fill="#fff" stroke="#111" strokeWidth={1} />
                     <text
                       x={cx}
                       y={cy + 26}
@@ -622,7 +629,6 @@ export default function DndBoard({
                       fontSize="12"
                       fill={pipStrong(t.num) ? "#dc2626" : "#111"}
                       fontWeight={pipStrong(t.num) ? "800" : "600"}
-                      pointerEvents="none"
                     >
                       {t.num ?? ""}
                     </text>

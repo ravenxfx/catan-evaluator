@@ -1,80 +1,51 @@
-import type { Tile } from "@/lib/catan/score";
-import type { Resource } from "@/lib/boardState";
+import type { Tile, Resource } from "@/lib/catan/types";
+import { pipValue } from "@/lib/catan/pips";
 
-const VALID_RES: Resource[] = ["holz", "lehm", "schaf", "getreide", "stein", "wueste"];
-const VALID_NUM = new Set([2, 3, 4, 5, 6, 8, 9, 10, 11, 12]);
+const VALID_RES: Resource[] = [
+  "holz",
+  "lehm",
+  "schaf",
+  "getreide",
+  "stein",
+  "wueste",
+];
 
-export function validateCompleteBoard(tiles: Tile[]) {
-  const errors: string[] = [];
-
-  // Resource counts
-  const counts: Record<string, number> = {};
-  for (const t of tiles) {
-    const r = (t.res ?? "") as string;
-    if (!r) continue;
-    counts[r] = (counts[r] ?? 0) + 1;
-  }
-
-  const placedRes = Object.values(counts).reduce((a, b) => a + b, 0);
-  if (placedRes < 19) {
-    return { ok: false as const, errors: ["Bitte alle 19 Rohstoffe setzen (Drag & Drop)."] };
-  }
-
-  const want: Record<Resource, number> = {
-    holz: 4,
-    schaf: 4,
-    getreide: 4,
-    lehm: 3,
-    stein: 3,
-    wueste: 1,
+export function balanceScore(tiles: Tile[]) {
+  const strengths: Record<Resource, number> = {
+    holz: 0,
+    lehm: 0,
+    schaf: 0,
+    getreide: 0,
+    stein: 0,
+    wueste: 0,
   };
 
-  for (const r of VALID_RES) {
-    if ((counts[r] ?? 0) !== want[r]) errors.push(`Rohstoff-Anzahl ${r}: ${counts[r] ?? 0} (soll: ${want[r]})`);
-  }
-
-  // Number counts
-  const numCounts: Record<number, number> = {};
-  let numPlaced = 0;
-
   for (const t of tiles) {
-    if (!t.res) continue;
+    if (!t.res || t.num == null) continue;
+    if (!VALID_RES.includes(t.res)) continue;
 
-    if (t.res === "wueste") {
-      if (t.num !== null) errors.push("Wüste darf keine Zahl haben.");
-      continue;
-    }
-
-    if (t.num === null) continue;
-
-    if (!VALID_NUM.has(t.num)) errors.push(`Ungültige Zahl: ${t.num}`);
-    numCounts[t.num] = (numCounts[t.num] ?? 0) + 1;
-    numPlaced++;
+    strengths[t.res] += pipValue(t.num);
   }
 
-  // expected: 18 numbers
-  if (numPlaced < 18) {
-    errors.push("Bitte alle Zahlen auf Nicht-Wüste Felder setzen (insgesamt 18).");
-  }
+  // Desert zählt NICHT in Balance
+  const values = [
+    strengths.holz,
+    strengths.lehm,
+    strengths.schaf,
+    strengths.getreide,
+    strengths.stein,
+  ];
 
-  const wantNums: Record<number, number> = {
-    2: 1,
-    3: 2,
-    4: 2,
-    5: 2,
-    6: 2,
-    8: 2,
-    9: 2,
-    10: 2,
-    11: 2,
-    12: 1,
+  const max = Math.max(...values);
+  const min = Math.min(...values);
+
+  const diff = max - min;
+
+  // 0–100 Score
+  const score = Math.max(0, 100 - diff * 5);
+
+  return {
+    score,
+    strengths,
   };
-
-  for (const n of Object.keys(wantNums).map(Number)) {
-    if ((numCounts[n] ?? 0) !== wantNums[n]) {
-      errors.push(`Zahl ${n}: ${numCounts[n] ?? 0} (soll: ${wantNums[n]})`);
-    }
-  }
-
-  return { ok: errors.length === 0, errors };
 }

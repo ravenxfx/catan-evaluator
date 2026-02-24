@@ -5,8 +5,6 @@ import { balanceScore, bestStartSpots, randomizeBoard } from "@/lib/catan/scorin
 import { isRed, pipValue } from "@/lib/catan/pips";
 import { NUMBER_COUNTS, NUMBER_LIST, PlayerCount, Resource, RESOURCE_COUNTS, Tile } from "@/lib/catan/types";
 
-export type { Tile } from "@/lib/catan/types";
-
 const CANVAS_W = 920;
 const CANVAS_H = 620;
 
@@ -30,19 +28,20 @@ function resIcon(res: Resource | null) {
 }
 
 function resColor(res: Resource | null) {
+  // knalliger
   switch (res) {
     case "holz":
-      return "#22c55e";
+      return "#16a34a"; // green-600
     case "lehm":
-      return "#f97316";
+      return "#ea580c"; // orange-600
     case "schaf":
-      return "#84cc16";
+      return "#65a30d"; // lime-600
     case "getreide":
-      return "#eab308";
+      return "#ca8a04"; // yellow-600
     case "stein":
-      return "#e5e7eb";
+      return "#cbd5e1"; // slate-300
     case "wueste":
-      return "#fdba74";
+      return "#f59e0b"; // amber-500
     default:
       return "#ffffff";
   }
@@ -72,7 +71,6 @@ function hexPolygon(cx: number, cy: number, size: number) {
 }
 
 function fieldLabel(q: number, r: number) {
-  // rows by r: -2..2 -> A..E
   const row = r === -2 ? "A" : r === -1 ? "B" : r === 0 ? "C" : r === 1 ? "D" : r === 2 ? "E" : "?";
   const startQ = r === -2 ? 0 : r === -1 ? -1 : r === 0 ? -2 : r === 1 ? -2 : r === 2 ? -2 : 0;
   const idx = q - startQ + 1;
@@ -80,13 +78,11 @@ function fieldLabel(q: number, r: number) {
 }
 
 function createPoolsFromTiles(tiles: Tile[]) {
-  // resource pool left = counts - assigned
   const resLeft: Record<Resource, number> = { ...RESOURCE_COUNTS };
   for (const t of tiles) {
     if (t.res) resLeft[t.res] = Math.max(0, (resLeft[t.res] ?? 0) - 1);
   }
 
-  // number pool left = counts - assigned (excluding desert/null)
   const numLeft: Record<number, number> = { ...NUMBER_COUNTS };
   for (const t of tiles) {
     if (t.num != null) numLeft[t.num] = Math.max(0, (numLeft[t.num] ?? 0) - 1);
@@ -96,7 +92,6 @@ function createPoolsFromTiles(tiles: Tile[]) {
 }
 
 function makeDefaultTiles(): Tile[] {
-  // radius 2 => 19
   const tiles: Tile[] = [];
   const R = 2;
   for (let q = -R; q <= R; q++) {
@@ -122,14 +117,11 @@ export default function BoardEditor({
   const [playerCount, setPlayerCount] = React.useState<PlayerCount>(4);
   const [premium, setPremium] = React.useState(true);
 
-  // brush selection
   const [brush, setBrush] = React.useState<Resource | "erase" | null>("holz");
 
-  // number popover state
   const [selected, setSelected] = React.useState<{ q: number; r: number } | null>(null);
   const [selectedCenter, setSelectedCenter] = React.useState<{ cx: number; cy: number } | null>(null);
 
-  // responsive scale (transform)
   const hostRef = React.useRef<HTMLDivElement | null>(null);
   const [scale, setScale] = React.useState(1);
 
@@ -186,7 +178,6 @@ export default function BoardEditor({
 
     if (brush === null) return;
 
-    // erase
     if (brush === "erase") {
       t.res = null;
       t.num = null;
@@ -194,14 +185,10 @@ export default function BoardEditor({
       return;
     }
 
-    // if pool empty and changing to that resource => block
     const curRes = t.res;
     if (curRes !== brush && resLeft[brush] <= 0) return;
 
-    // set resource
     t.res = brush;
-
-    // if desert => clear number
     if (brush === "wueste") t.num = null;
 
     onChange(next);
@@ -218,9 +205,6 @@ export default function BoardEditor({
 
     const old = t.num;
 
-    // return old to pool (conceptually) is handled by numLeft recompute,
-    // but we must enforce availability:
-    // if choosing n, it must be available OR it's already selected.
     if (n === null) {
       t.num = null;
       onChange(next);
@@ -234,7 +218,6 @@ export default function BoardEditor({
     onChange(next);
   }
 
-  // close popover on outside click
   React.useEffect(() => {
     function onDown(e: MouseEvent) {
       const el = e.target as HTMLElement;
@@ -449,7 +432,7 @@ export default function BoardEditor({
               </div>
             )}
 
-            {/* Click hit-areas (paint + open popover) */}
+            {/* Click hit-areas */}
             {tiles.map((t) => {
               const p = axialToPixel(t.q, t.r, size);
               const cx = p.x + offsetX;
@@ -478,11 +461,7 @@ export default function BoardEditor({
                   }}
                   onClick={(e) => {
                     e.stopPropagation();
-
-                    // paint on click (if brush selected)
                     applyBrushToTile(t.q, t.r);
-
-                    // also open number popover
                     setSelected({ q: t.q, r: t.r });
                     setSelectedCenter({ cx, cy });
                   }}
@@ -490,7 +469,7 @@ export default function BoardEditor({
               );
             })}
 
-            {/* SVG visuals (no pointer events) */}
+            {/* SVG visuals */}
             <svg
               width={CANVAS_W}
               height={CANVAS_H}
@@ -507,16 +486,13 @@ export default function BoardEditor({
                 return (
                   <g key={`hex-${t.q},${t.r}`}>
                     <polygon points={poly} fill={resColor(t.res)} stroke="#2b2b2b" strokeWidth={1.2} />
-
                     <text x={cx} y={cy - 26} textAnchor="middle" fontSize="11" fill="#111">
                       {fieldLabel(t.q, t.r)}
                     </text>
-
                     <text x={cx} y={cy - 4} textAnchor="middle" fontSize="22">
                       {resIcon(t.res)}
                     </text>
 
-                    {/* number circle */}
                     <circle cx={cx} cy={cy + 22} r={15} fill="#fff" stroke="#111" strokeWidth={1} />
                     <text
                       x={cx}
@@ -529,7 +505,6 @@ export default function BoardEditor({
                       {t.num ?? ""}
                     </text>
 
-                    {/* small pip indicator (optional) */}
                     {t.num != null && t.res && t.res !== "wueste" ? (
                       <text x={cx} y={cy + 46} textAnchor="middle" fontSize="10" fill="#64748b">
                         pips {pipValue(t.num)}
@@ -539,11 +514,9 @@ export default function BoardEditor({
                 );
               })}
 
-              {/* premium start markers (on vertices) */}
+              {/* premium start markers */}
               {premium
                 ? startSpots.map((v) => {
-                    // v.x,y are in board-local coords at same size=58 coordinate system
-                    // convert to canvas coords by applying same offsets:
                     const mx = v.x + offsetX;
                     const my = v.y + offsetY;
                     return (
@@ -564,21 +537,18 @@ export default function BoardEditor({
 
       {/* RIGHT */}
       <aside className="space-y-3">
-        {/* controls */}
         <div className="rounded-3xl border bg-white shadow-sm p-3">
           <div className="flex items-center justify-between gap-2">
             <div className="text-sm font-semibold">Settings</div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                className={`rounded-xl border px-3 py-2 text-sm shadow-sm transition ${
-                  premium ? "bg-black text-white border-black" : "bg-white hover:shadow-md"
-                }`}
-                onClick={() => setPremium((p) => !p)}
-              >
-                Premium {premium ? "On" : "Off"}
-              </button>
-            </div>
+            <button
+              type="button"
+              className={`rounded-xl border px-3 py-2 text-sm shadow-sm transition ${
+                premium ? "bg-black text-white border-black" : "bg-white hover:shadow-md"
+              }`}
+              onClick={() => setPremium((p) => !p)}
+            >
+              Premium {premium ? "On" : "Off"}
+            </button>
           </div>
 
           <div className="mt-2 flex items-center justify-between gap-2">
@@ -602,7 +572,6 @@ export default function BoardEditor({
           </div>
         </div>
 
-        {/* balance score */}
         <div className="rounded-3xl border bg-white shadow-sm p-3">
           <div className="text-sm font-semibold">Balance Score</div>
           <div className="mt-2 flex items-center gap-3">
@@ -615,7 +584,6 @@ export default function BoardEditor({
           </div>
         </div>
 
-        {/* resource strength bars */}
         <div className="rounded-3xl border bg-white shadow-sm p-3">
           <div className="text-sm font-semibold">Resource Strength</div>
           <div className="mt-2 space-y-2">
@@ -653,7 +621,6 @@ export default function BoardEditor({
           </div>
         </div>
 
-        {/* start spots list */}
         <div className="rounded-3xl border bg-white shadow-sm p-3">
           <div className="flex items-center justify-between">
             <div className="text-sm font-semibold">Top Start Spots</div>
@@ -661,16 +628,11 @@ export default function BoardEditor({
           </div>
 
           {!premium ? (
-            <div className="mt-2 text-sm text-slate-600">
-              Premium ist aus → Marker & Liste versteckt.
-            </div>
+            <div className="mt-2 text-sm text-slate-600">Premium ist aus → Marker & Liste versteckt.</div>
           ) : (
             <div className="mt-2 space-y-2">
               {startSpots.map((s) => (
-                <div
-                  key={s.id}
-                  className="flex items-center justify-between rounded-2xl border bg-slate-50 px-3 py-2"
-                >
+                <div key={s.id} className="flex items-center justify-between rounded-2xl border bg-slate-50 px-3 py-2">
                   <div className="flex items-center gap-2">
                     <div className="h-7 w-7 rounded-xl bg-black text-white flex items-center justify-center font-extrabold text-xs">
                       {s.rank}

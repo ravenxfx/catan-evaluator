@@ -1,11 +1,5 @@
-import type { Resource } from "@/lib/boardState";
+import type { Tile } from "@/lib/catan/types";
 
-export type Tile = {
-  q: number;
-  r: number;
-  res: Resource | "" | null;
-  num: number | null;
-};
 
 export function pipValue(num: number | null) {
   if (num === null) return 0;
