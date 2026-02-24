@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import RankingPanel from "@/components/RankingPanel";
 import { balanceScore, bestStartSpots, randomizeBoard } from "@/lib/catan/scoring";
 import { isRed, pipValue } from "@/lib/catan/pips";
 import { NUMBER_COUNTS, NUMBER_LIST, PlayerCount, Resource, RESOURCE_COUNTS, Tile } from "@/lib/catan/types";
@@ -28,20 +29,19 @@ function resIcon(res: Resource | null) {
 }
 
 function resColor(res: Resource | null) {
-  // knalliger
   switch (res) {
     case "holz":
-      return "#16a34a"; // green-600
+      return "#16a34a";
     case "lehm":
-      return "#ea580c"; // orange-600
+      return "#ea580c";
     case "schaf":
-      return "#65a30d"; // lime-600
+      return "#65a30d";
     case "getreide":
-      return "#ca8a04"; // yellow-600
+      return "#ca8a04";
     case "stein":
-      return "#cbd5e1"; // slate-300
+      return "#cbd5e1";
     case "wueste":
-      return "#f59e0b"; // amber-500
+      return "#f59e0b";
     default:
       return "#ffffff";
   }
@@ -79,14 +79,10 @@ function fieldLabel(q: number, r: number) {
 
 function createPoolsFromTiles(tiles: Tile[]) {
   const resLeft: Record<Resource, number> = { ...RESOURCE_COUNTS };
-  for (const t of tiles) {
-    if (t.res) resLeft[t.res] = Math.max(0, (resLeft[t.res] ?? 0) - 1);
-  }
+  for (const t of tiles) if (t.res) resLeft[t.res] = Math.max(0, (resLeft[t.res] ?? 0) - 1);
 
   const numLeft: Record<number, number> = { ...NUMBER_COUNTS };
-  for (const t of tiles) {
-    if (t.num != null) numLeft[t.num] = Math.max(0, (numLeft[t.num] ?? 0) - 1);
-  }
+  for (const t of tiles) if (t.num != null) numLeft[t.num] = Math.max(0, (numLeft[t.num] ?? 0) - 1);
 
   return { resLeft, numLeft };
 }
@@ -118,12 +114,14 @@ export default function BoardEditor({
   const [premium, setPremium] = React.useState(true);
 
   const [brush, setBrush] = React.useState<Resource | "erase" | null>("holz");
-
   const [selected, setSelected] = React.useState<{ q: number; r: number } | null>(null);
   const [selectedCenter, setSelectedCenter] = React.useState<{ cx: number; cy: number } | null>(null);
 
   const hostRef = React.useRef<HTMLDivElement | null>(null);
   const [scale, setScale] = React.useState(1);
+
+  const [rankingRefresh, setRankingRefresh] = React.useState(0);
+  const [saving, setSaving] = React.useState(false);
 
   React.useEffect(() => {
     function recompute() {
@@ -172,7 +170,6 @@ export default function BoardEditor({
   function applyBrushToTile(q: number, r: number) {
     const idx = tiles.findIndex((t) => t.q === q && t.r === r);
     if (idx < 0) return;
-
     const next = tiles.map((t) => ({ ...t }));
     const t = next[idx];
 
@@ -243,15 +240,95 @@ export default function BoardEditor({
     setSelectedCenter(null);
   }
 
+  async function saveBoard() {
+    setSaving(true);
+    try {
+      // minimal payload (API kann mehr annehmen, aber muss mind. tiles speichern)
+      const payload = {
+        tiles,
+        score: metrics.score,
+        strengths: metrics.strengths,
+        playerCount,
+      };
+
+      const res = await fetch("/api/boards", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) throw new Error(`Save failed (${res.status})`);
+
+      setRankingRefresh((x) => x + 1);
+    } catch (e: any) {
+      alert(e?.message ?? "Speichern fehlgeschlagen");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const topN = playerCount === 3 ? 6 : 8;
+
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-3">
-      {/* LEFT */}
+    <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_380px] gap-3">
+      {/* LEFT COLUMN */}
       <div className="space-y-3">
-        {/* Brush row */}
+        {/* Top action row (snatched & mobile) */}
         <div className="rounded-2xl border bg-white shadow-sm p-2">
-          <div className="flex items-center justify-between gap-2">
-            <div className="text-sm font-semibold">Brush</div>
-            <div className="flex items-center gap-2">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div className="flex items-center gap-2 overflow-x-auto pb-1">
+              {(Object.keys(RESOURCE_COUNTS) as Resource[]).map((r) => {
+                const active = brush === r;
+                const disabled = resLeft[r] <= 0 && !active;
+                return (
+                  <button
+                    key={r}
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => setBrush(r)}
+                    className={`shrink-0 rounded-2xl border px-3 py-2 flex items-center gap-2 shadow-sm transition ${
+                      active ? "bg-black text-white border-black" : "bg-white hover:shadow-md"
+                    } ${disabled ? "opacity-40 cursor-not-allowed" : ""}`}
+                    title={`${r} verbleibend: ${resLeft[r]}`}
+                  >
+                    <span
+                      className="inline-flex items-center justify-center text-xl"
+                      style={{
+                        width: 34,
+                        height: 34,
+                        background: resColor(r),
+                        clipPath: "polygon(25% 6.7%, 75% 6.7%, 100% 50%, 75% 93.3%, 25% 93.3%, 0% 50%)",
+                      }}
+                    >
+                      {resIcon(r)}
+                    </span>
+                    <div className="text-left leading-tight">
+                      <div className="text-sm font-semibold capitalize">{r}</div>
+                      <div className={`text-xs ${active ? "text-white/70" : "text-slate-500"}`}>{resLeft[r]} left</div>
+                    </div>
+                  </button>
+                );
+              })}
+
+              <button
+                type="button"
+                onClick={() => setBrush("erase")}
+                className={`shrink-0 rounded-2xl border px-3 py-2 flex items-center gap-2 shadow-sm transition ${
+                  brush === "erase" ? "bg-black text-white border-black" : "bg-white hover:shadow-md"
+                }`}
+                title="Erase (setzt res+num leer)"
+              >
+                <span className="inline-flex items-center justify-center text-xl" style={{ width: 34, height: 34 }}>
+                  🧽
+                </span>
+                <div className="text-left leading-tight">
+                  <div className="text-sm font-semibold">Erase</div>
+                  <div className={`text-xs ${brush === "erase" ? "text-white/70" : "text-slate-500"}`}>clear</div>
+                </div>
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2 justify-end">
               <button
                 onClick={randomize}
                 className="rounded-xl border bg-white px-3 py-2 text-sm shadow-sm hover:shadow-md transition"
@@ -266,74 +343,29 @@ export default function BoardEditor({
               >
                 Reset
               </button>
+              <button
+                onClick={saveBoard}
+                disabled={saving}
+                className={`rounded-xl border px-3 py-2 text-sm shadow-sm transition ${
+                  saving ? "bg-slate-100 text-slate-500" : "bg-black text-white border-black hover:opacity-95"
+                }`}
+                type="button"
+              >
+                {saving ? "Saving…" : "Save"}
+              </button>
             </div>
           </div>
 
-          <div className="mt-2 flex items-center gap-2 overflow-x-auto pb-1">
-            {(Object.keys(RESOURCE_COUNTS) as Resource[]).map((r) => {
-              const active = brush === r;
-              const disabled = resLeft[r] <= 0 && !active;
-              return (
-                <button
-                  key={r}
-                  type="button"
-                  disabled={disabled}
-                  onClick={() => setBrush(r)}
-                  className={`shrink-0 rounded-2xl border px-3 py-2 flex items-center gap-2 shadow-sm transition ${
-                    active ? "bg-black text-white border-black" : "bg-white hover:shadow-md"
-                  } ${disabled ? "opacity-40 cursor-not-allowed" : ""}`}
-                  title={`${r} verbleibend: ${resLeft[r]}`}
-                >
-                  <span
-                    className="inline-flex items-center justify-center text-xl"
-                    style={{
-                      width: 34,
-                      height: 34,
-                      background: resColor(r),
-                      clipPath:
-                        "polygon(25% 6.7%, 75% 6.7%, 100% 50%, 75% 93.3%, 25% 93.3%, 0% 50%)",
-                    }}
-                  >
-                    {resIcon(r)}
-                  </span>
-                  <div className="text-left leading-tight">
-                    <div className="text-sm font-semibold capitalize">{r}</div>
-                    <div className={`text-xs ${active ? "text-white/70" : "text-slate-500"}`}>
-                      {resLeft[r]} left
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
-
-            <button
-              type="button"
-              onClick={() => setBrush("erase")}
-              className={`shrink-0 rounded-2xl border px-3 py-2 flex items-center gap-2 shadow-sm transition ${
-                brush === "erase" ? "bg-black text-white border-black" : "bg-white hover:shadow-md"
-              }`}
-              title="Erase (setzt res+num leer)"
-            >
-              <span className="inline-flex items-center justify-center text-xl" style={{ width: 34, height: 34 }}>
-                🧽
-              </span>
-              <div className="text-left leading-tight">
-                <div className="text-sm font-semibold">Erase</div>
-                <div className={`text-xs ${brush === "erase" ? "text-white/70" : "text-slate-500"}`}>clear</div>
-              </div>
-            </button>
-          </div>
-
           <div className="mt-2 text-xs text-slate-500">
-            Tip: Brush wählen → Hex klicken zum „Malen“. Zahlen: Hex klicken → Popover.
+            Brush wählen → Hex klicken zum „Malen“. Zahlen: Hex klicken → Popover.
           </div>
         </div>
 
-        {/* Board */}
+        {/* BOARD CARD (highlighted) */}
         <div
           data-board-wrap="1"
           ref={hostRef}
-          className="relative rounded-3xl border bg-slate-100 shadow-sm p-2 flex justify-center overflow-visible"
+          className="relative rounded-3xl border bg-gradient-to-b from-slate-100 to-slate-50 shadow-sm p-2 flex justify-center overflow-hidden"
         >
           <div
             className="relative"
@@ -408,9 +440,7 @@ export default function BoardEditor({
                         disabled={disabled}
                         className={`rounded-xl border px-3 py-2 text-sm font-mono transition ${
                           disabled ? "opacity-40 cursor-not-allowed" : "bg-white hover:bg-slate-50"
-                        } ${isRed(n) ? "text-red-600 font-semibold" : ""} ${
-                          isCurrent ? "bg-black text-white hover:bg-black" : ""
-                        }`}
+                        } ${isRed(n) ? "text-red-600 font-semibold" : ""} ${isCurrent ? "bg-black text-white hover:bg-black" : ""}`}
                         type="button"
                         onClick={() => {
                           if (!selectedTile) return;
@@ -425,9 +455,7 @@ export default function BoardEditor({
                 </div>
 
                 {!canEditNumber && (
-                  <div className="mt-2 text-xs text-amber-700">
-                    Zahlen gehen nur auf Nicht-Wüste Felder (mit gesetztem Rohstoff).
-                  </div>
+                  <div className="mt-2 text-xs text-amber-700">Zahlen gehen nur auf Nicht-Wüste Felder (mit Rohstoff).</div>
                 )}
               </div>
             )}
@@ -437,7 +465,6 @@ export default function BoardEditor({
               const p = axialToPixel(t.q, t.r, size);
               const cx = p.x + offsetX;
               const cy = p.y + offsetY;
-
               const isSel = selected?.q === t.q && selected?.r === t.r;
 
               return (
@@ -450,8 +477,7 @@ export default function BoardEditor({
                     width: size * 1.9,
                     height: size * 1.9,
                     transform: "translate(-50%, -50%)",
-                    clipPath:
-                      "polygon(25% 6.7%, 75% 6.7%, 100% 50%, 75% 93.3%, 25% 93.3%, 0% 50%)",
+                    clipPath: "polygon(25% 6.7%, 75% 6.7%, 100% 50%, 75% 93.3%, 25% 93.3%, 0% 50%)",
                     background: isSel ? "rgba(0,0,0,0.05)" : "transparent",
                     outline: isSel ? "3px solid #111" : "none",
                     borderRadius: 16,
@@ -516,7 +542,7 @@ export default function BoardEditor({
 
               {/* premium start markers */}
               {premium
-                ? startSpots.map((v) => {
+                ? startSpots.slice(0, topN).map((v) => {
                     const mx = v.x + offsetX;
                     const my = v.y + offsetY;
                     return (
@@ -535,122 +561,190 @@ export default function BoardEditor({
         </div>
       </div>
 
-      {/* RIGHT */}
+      {/* RIGHT COLUMN */}
       <aside className="space-y-3">
-        <div className="rounded-3xl border bg-white shadow-sm p-3">
-          <div className="flex items-center justify-between gap-2">
-            <div className="text-sm font-semibold">Settings</div>
-            <button
-              type="button"
-              className={`rounded-xl border px-3 py-2 text-sm shadow-sm transition ${
-                premium ? "bg-black text-white border-black" : "bg-white hover:shadow-md"
-              }`}
-              onClick={() => setPremium((p) => !p)}
-            >
-              Premium {premium ? "On" : "Off"}
-            </button>
-          </div>
-
-          <div className="mt-2 flex items-center justify-between gap-2">
-            <div className="text-sm text-slate-600">Players</div>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                className={`rounded-xl border px-3 py-2 text-sm ${playerCount === 3 ? "bg-black text-white border-black" : "bg-white"}`}
-                onClick={() => setPlayerCount(3)}
-              >
-                3
-              </button>
-              <button
-                type="button"
-                className={`rounded-xl border px-3 py-2 text-sm ${playerCount === 4 ? "bg-black text-white border-black" : "bg-white"}`}
-                onClick={() => setPlayerCount(4)}
-              >
-                4
-              </button>
+        {/* Mobile: collapsible panels */}
+        <div className="lg:hidden space-y-3">
+          <details className="rounded-3xl border bg-white shadow-sm p-3" open>
+            <summary className="cursor-pointer text-sm font-semibold">Scores & Settings</summary>
+            <div className="mt-3 space-y-3">
+              <SettingsCard premium={premium} setPremium={setPremium} playerCount={playerCount} setPlayerCount={setPlayerCount} />
+              <BalanceCard score={metrics.score} />
+              <StrengthCard strengths={metrics.strengths} />
+              <StartSpotsCard premium={premium} playerCount={playerCount} startSpots={startSpots.slice(0, topN)} />
             </div>
-          </div>
+          </details>
+
+          <details className="rounded-3xl border bg-white shadow-sm p-3">
+            <summary className="cursor-pointer text-sm font-semibold">Ranking</summary>
+            <div className="mt-3">
+              <RankingPanel
+                refreshSignal={rankingRefresh}
+                onLoadBoard={(t) => {
+                  onChange(t);
+                  setSelected(null);
+                  setSelectedCenter(null);
+                }}
+              />
+            </div>
+          </details>
         </div>
 
-        <div className="rounded-3xl border bg-white shadow-sm p-3">
-          <div className="text-sm font-semibold">Balance Score</div>
-          <div className="mt-2 flex items-center gap-3">
-            <div className={`h-10 w-10 rounded-2xl ${balanceColor(metrics.score)} flex items-center justify-center text-white font-extrabold`}>
-              {metrics.score}
-            </div>
-            <div className="text-sm text-slate-600">
-              0–100 (höher = gleichmäßiger). Desert zählt nicht als Ressource.
-            </div>
-          </div>
-        </div>
+        {/* Desktop: normal side panels */}
+        <div className="hidden lg:block space-y-3">
+          <SettingsCard premium={premium} setPremium={setPremium} playerCount={playerCount} setPlayerCount={setPlayerCount} />
+          <BalanceCard score={metrics.score} />
+          <StrengthCard strengths={metrics.strengths} />
+          <StartSpotsCard premium={premium} playerCount={playerCount} startSpots={startSpots.slice(0, topN)} />
 
-        <div className="rounded-3xl border bg-white shadow-sm p-3">
-          <div className="text-sm font-semibold">Resource Strength</div>
-          <div className="mt-2 space-y-2">
-            {(["holz", "lehm", "schaf", "getreide", "stein"] as Resource[]).map((r) => {
-              const v = metrics.strengths[r];
-              const max = Math.max(
-                1,
-                ...(["holz", "lehm", "schaf", "getreide", "stein"] as Resource[]).map((rr) => metrics.strengths[rr])
-              );
-              const pct = Math.round((v / max) * 100);
-              return (
-                <div key={r} className="space-y-1">
-                  <div className="flex items-center justify-between text-xs text-slate-600">
-                    <span className="flex items-center gap-2">
-                      <span className="inline-flex w-7 justify-center">{resIcon(r)}</span>
-                      <span className="capitalize">{r}</span>
-                    </span>
-                    <span className="font-mono">{v}</span>
-                  </div>
-                  <div className="h-2 rounded-full bg-slate-200 overflow-hidden">
-                    <div
-                      className="h-full"
-                      style={{
-                        width: `${pct}%`,
-                        background: resColor(r),
-                      }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          <div className="mt-2 text-xs text-slate-500">
-            Stärke = Summe der Pips (6/8=5 … 2/12=1) über alle Felder der Ressource.
-          </div>
-        </div>
-
-        <div className="rounded-3xl border bg-white shadow-sm p-3">
-          <div className="flex items-center justify-between">
-            <div className="text-sm font-semibold">Top Start Spots</div>
-            <div className="text-xs text-slate-500">{playerCount === 3 ? "Top 6" : "Top 8"}</div>
-          </div>
-
-          {!premium ? (
-            <div className="mt-2 text-sm text-slate-600">Premium ist aus → Marker & Liste versteckt.</div>
-          ) : (
-            <div className="mt-2 space-y-2">
-              {startSpots.map((s) => (
-                <div key={s.id} className="flex items-center justify-between rounded-2xl border bg-slate-50 px-3 py-2">
-                  <div className="flex items-center gap-2">
-                    <div className="h-7 w-7 rounded-xl bg-black text-white flex items-center justify-center font-extrabold text-xs">
-                      {s.rank}
-                    </div>
-                    <div className="text-sm text-slate-700">Spot</div>
-                  </div>
-                  <div className="font-mono text-sm font-semibold">{s.score}</div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <div className="mt-2 text-xs text-slate-500">
-            Bewertung = Summe Pips der angrenzenden Ressourcentiles, * (Anzahl Ressourcentiles / 3) + Diversitätsbonus.
-            Wüste zählt wie „außen“ (gleiche Abschwächung).
-          </div>
+          <RankingPanel
+            refreshSignal={rankingRefresh}
+            onLoadBoard={(t) => {
+              onChange(t);
+              setSelected(null);
+              setSelectedCenter(null);
+            }}
+          />
         </div>
       </aside>
+    </div>
+  );
+}
+
+/* ---------- small UI subcomponents ---------- */
+
+function SettingsCard({
+  premium,
+  setPremium,
+  playerCount,
+  setPlayerCount,
+}: {
+  premium: boolean;
+  setPremium: (v: boolean | ((p: boolean) => boolean)) => void;
+  playerCount: PlayerCount;
+  setPlayerCount: (v: PlayerCount) => void;
+}) {
+  return (
+    <div className="rounded-3xl border bg-white shadow-sm p-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-sm font-semibold">Settings</div>
+        <button
+          type="button"
+          className={`rounded-xl border px-3 py-2 text-sm shadow-sm transition ${
+            premium ? "bg-black text-white border-black" : "bg-white hover:shadow-md"
+          }`}
+          onClick={() => setPremium((p) => !p)}
+        >
+          Premium {premium ? "On" : "Off"}
+        </button>
+      </div>
+
+      <div className="mt-2 flex items-center justify-between gap-2">
+        <div className="text-sm text-slate-600">Players</div>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            className={`rounded-xl border px-3 py-2 text-sm ${playerCount === 3 ? "bg-black text-white border-black" : "bg-white"}`}
+            onClick={() => setPlayerCount(3)}
+          >
+            3
+          </button>
+          <button
+            type="button"
+            className={`rounded-xl border px-3 py-2 text-sm ${playerCount === 4 ? "bg-black text-white border-black" : "bg-white"}`}
+            onClick={() => setPlayerCount(4)}
+          >
+            4
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BalanceCard({ score }: { score: number }) {
+  return (
+    <div className="rounded-3xl border bg-white shadow-sm p-3">
+      <div className="text-sm font-semibold">Balance Score</div>
+      <div className="mt-2 flex items-center gap-3">
+        <div className={`h-10 w-10 rounded-2xl ${balanceColor(score)} flex items-center justify-center text-white font-extrabold`}>
+          {score}
+        </div>
+        <div className="text-sm text-slate-600">0–100 (höher = gleichmäßiger).</div>
+      </div>
+    </div>
+  );
+}
+
+function StrengthCard({ strengths }: { strengths: Record<string, number> }) {
+  const order = ["holz", "lehm", "schaf", "getreide", "stein"];
+  const max = Math.max(1, ...order.map((k) => strengths[k] ?? 0));
+  return (
+    <div className="rounded-3xl border bg-white shadow-sm p-3">
+      <div className="text-sm font-semibold">Resource Strength</div>
+      <div className="mt-2 space-y-2">
+        {order.map((r) => {
+          const v = strengths[r] ?? 0;
+          const pct = Math.round((v / max) * 100);
+          const col = resColor(r as any);
+          return (
+            <div key={r} className="space-y-1">
+              <div className="flex items-center justify-between text-xs text-slate-600">
+                <span className="flex items-center gap-2">
+                  <span className="inline-flex w-7 justify-center">{resIcon(r as any)}</span>
+                  <span className="capitalize">{r}</span>
+                </span>
+                <span className="font-mono">{v}</span>
+              </div>
+              <div className="h-2 rounded-full bg-slate-200 overflow-hidden">
+                <div className="h-full" style={{ width: `${pct}%`, background: col }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-2 text-xs text-slate-500">Stärke = Summe Pips über alle Felder je Ressource.</div>
+    </div>
+  );
+}
+
+function StartSpotsCard({
+  premium,
+  playerCount,
+  startSpots,
+}: {
+  premium: boolean;
+  playerCount: PlayerCount;
+  startSpots: Array<{ id: string; rank: number; score: number }>;
+}) {
+  return (
+    <div className="rounded-3xl border bg-white shadow-sm p-3">
+      <div className="flex items-center justify-between">
+        <div className="text-sm font-semibold">Top Start Spots</div>
+        <div className="text-xs text-slate-500">{playerCount === 3 ? "Top 6" : "Top 8"}</div>
+      </div>
+
+      {!premium ? (
+        <div className="mt-2 text-sm text-slate-600">Premium ist aus → Marker & Liste versteckt.</div>
+      ) : (
+        <div className="mt-2 space-y-2">
+          {startSpots.map((s) => (
+            <div key={s.id} className="flex items-center justify-between rounded-2xl border bg-slate-50 px-3 py-2">
+              <div className="flex items-center gap-2">
+                <div className="h-7 w-7 rounded-xl bg-black text-white flex items-center justify-center font-extrabold text-xs">
+                  {s.rank}
+                </div>
+                <div className="text-sm text-slate-700">Spot</div>
+              </div>
+              <div className="font-mono text-sm font-semibold">{s.score}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="mt-2 text-xs text-slate-500">
+        Liste minimal: Rang + Score. Marker erscheinen auf dem Board (Premium).
+      </div>
     </div>
   );
 }
