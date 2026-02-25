@@ -1,15 +1,17 @@
 "use client";
 
 import React from "react";
-import RankingPanel from "@/components/RankingPanel";
 import { balanceScore, bestStartSpots, randomizeBoard } from "@/lib/catan/scoring";
 import { isRed, pipValue } from "@/lib/catan/pips";
 import { NUMBER_COUNTS, NUMBER_LIST, PlayerCount, Resource, RESOURCE_COUNTS, Tile } from "@/lib/catan/types";
 
 const CANVAS_W = 920;
 const CANVAS_H = 620;
+const PREMIUM_THRESHOLD = 90;
 
-function resIcon(res: Resource | null) {
+type Mode = "builder" | "random";
+
+function resEmoji(res: Resource | null) {
   switch (res) {
     case "holz":
       return "🌲";
@@ -25,6 +27,25 @@ function resIcon(res: Resource | null) {
       return "🏜️";
     default:
       return "⬡";
+  }
+}
+
+function resLabel(res: Resource | null) {
+  switch (res) {
+    case "holz":
+      return "Wood";
+    case "lehm":
+      return "Brick";
+    case "schaf":
+      return "Sheep";
+    case "getreide":
+      return "Wheat";
+    case "stein":
+      return "Ore";
+    case "wueste":
+      return "Desert";
+    default:
+      return "Empty";
   }
 }
 
@@ -47,12 +68,20 @@ function resColor(res: Resource | null) {
   }
 }
 
-function balanceColor(score: number) {
-  if (score >= 85) return "bg-emerald-600";
-  if (score >= 70) return "bg-lime-600";
-  if (score >= 55) return "bg-amber-500";
-  if (score >= 40) return "bg-orange-500";
-  return "bg-red-600";
+function balanceTone(score: number) {
+  if (score >= PREMIUM_THRESHOLD) return "from-emerald-600 to-emerald-800";
+  if (score >= 80) return "from-lime-500 to-lime-700";
+  if (score >= 65) return "from-amber-400 to-amber-600";
+  if (score >= 50) return "from-orange-400 to-orange-600";
+  return "from-red-500 to-red-700";
+}
+
+function balanceRing(score: number) {
+  if (score >= PREMIUM_THRESHOLD) return "ring-emerald-300/60";
+  if (score >= 80) return "ring-lime-300/60";
+  if (score >= 65) return "ring-amber-300/60";
+  if (score >= 50) return "ring-orange-300/60";
+  return "ring-red-300/60";
 }
 
 function axialToPixel(q: number, r: number, size: number) {
@@ -100,18 +129,45 @@ function makeDefaultTiles(): Tile[] {
   return tiles;
 }
 
+function tilesClone(tiles: Tile[]): Tile[] {
+  return tiles.map((t) => ({ ...t }));
+}
+
 export default function BoardEditor({
   tiles,
   onChange,
+  mode = "builder",
+  playerCount,
+  onPlayerCountChange,
+  premium,
+  onPremiumChange,
+  showStartSpotList = false,
+  onRandomizeExternal,
+  onResetExternal,
 }: {
   tiles: Tile[];
   onChange: (tiles: Tile[]) => void;
+  mode?: Mode;
+
+  // let pages control these (so both pages behave consistently)
+  playerCount: PlayerCount;
+  onPlayerCountChange: (p: PlayerCount) => void;
+
+  premium: boolean;
+  onPremiumChange: (p: boolean) => void;
+
+  // random page may want a list; evaluate page can disable it
+  showStartSpotList?: boolean;
+
+  // optional: let page provide its own randomize/reset buttons;
+  // if not provided, builder will show them.
+  onRandomizeExternal?: () => void;
+  onResetExternal?: () => void;
 }) {
   const size = 58;
   const padding = 90;
 
-  const [playerCount, setPlayerCount] = React.useState<PlayerCount>(4);
-  const [premium, setPremium] = React.useState(true);
+  const isBuilder = mode === "builder";
 
   const [brush, setBrush] = React.useState<Resource | "erase" | null>("holz");
   const [selected, setSelected] = React.useState<{ q: number; r: number } | null>(null);
@@ -120,8 +176,14 @@ export default function BoardEditor({
   const hostRef = React.useRef<HTMLDivElement | null>(null);
   const [scale, setScale] = React.useState(1);
 
-  const [rankingRefresh, setRankingRefresh] = React.useState(0);
-  const [saving, setSaving] = React.useState(false);
+  const [toast, setToast] = React.useState<string | null>(null);
+  const toastTimer = React.useRef<number | null>(null);
+
+  function showToast(msg: string) {
+    setToast(msg);
+    if (toastTimer.current) window.clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setToast(null), 2000);
+  }
 
   React.useEffect(() => {
     function recompute() {
@@ -162,15 +224,19 @@ export default function BoardEditor({
     return tiles.find((t) => t.q === selected.q && t.r === selected.r) ?? null;
   }, [selected, tiles]);
 
-  const canEditNumber = !!selectedTile && selectedTile.res !== null && selectedTile.res !== "wueste";
-
+  const canEditNumber = isBuilder && !!selectedTile && selectedTile.res !== null && selectedTile.res !== "wueste";
   const metrics = React.useMemo(() => balanceScore(tiles), [tiles]);
+
   const startSpots = React.useMemo(() => bestStartSpots(tiles, playerCount), [tiles, playerCount]);
+  const topN = playerCount === 3 ? 6 : 8;
 
   function applyBrushToTile(q: number, r: number) {
+    if (!isBuilder) return;
+
     const idx = tiles.findIndex((t) => t.q === q && t.r === r);
     if (idx < 0) return;
-    const next = tiles.map((t) => ({ ...t }));
+
+    const next = tilesClone(tiles);
     const t = next[idx];
 
     if (brush === null) return;
@@ -192,10 +258,12 @@ export default function BoardEditor({
   }
 
   function setNumber(q: number, r: number, n: number | null) {
+    if (!isBuilder) return;
+
     const idx = tiles.findIndex((t) => t.q === q && t.r === r);
     if (idx < 0) return;
 
-    const next = tiles.map((t) => ({ ...t }));
+    const next = tilesClone(tiles);
     const t = next[idx];
 
     if (!t.res || t.res === "wueste") return;
@@ -227,146 +295,127 @@ export default function BoardEditor({
     return () => window.removeEventListener("mousedown", onDown);
   }, []);
 
-  function resetBoard() {
+  function resetBoardInternal() {
     onChange(makeDefaultTiles());
     setSelected(null);
     setSelectedCenter(null);
     setBrush("holz");
+    showToast("Reset ✅");
   }
 
-  function randomize() {
+  function randomizeInternal() {
     onChange(randomizeBoard(tiles));
     setSelected(null);
     setSelectedCenter(null);
+    showToast("Randomized 🎲");
   }
 
-  async function saveBoard() {
-    setSaving(true);
-    try {
-      // minimal payload (API kann mehr annehmen, aber muss mind. tiles speichern)
-      const payload = {
-        tiles,
-        score: metrics.score,
-        strengths: metrics.strengths,
-        playerCount,
-      };
-
-      const res = await fetch("/api/boards", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      if (!res.ok) throw new Error(`Save failed (${res.status})`);
-
-      setRankingRefresh((x) => x + 1);
-    } catch (e: any) {
-      alert(e?.message ?? "Speichern fehlgeschlagen");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  const topN = playerCount === 3 ? 6 : 8;
+  const isPremiumFair = metrics.score >= PREMIUM_THRESHOLD;
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_380px] gap-3">
-      {/* LEFT COLUMN */}
+      {/* LEFT */}
       <div className="space-y-3">
-        {/* Top action row (snatched & mobile) */}
-        <div className="rounded-2xl border bg-white shadow-sm p-2">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-            <div className="flex items-center gap-2 overflow-x-auto pb-1">
-              {(Object.keys(RESOURCE_COUNTS) as Resource[]).map((r) => {
-                const active = brush === r;
-                const disabled = resLeft[r] <= 0 && !active;
-                return (
-                  <button
-                    key={r}
-                    type="button"
-                    disabled={disabled}
-                    onClick={() => setBrush(r)}
-                    className={`shrink-0 rounded-2xl border px-3 py-2 flex items-center gap-2 shadow-sm transition ${
-                      active ? "bg-black text-white border-black" : "bg-white hover:shadow-md"
-                    } ${disabled ? "opacity-40 cursor-not-allowed" : ""}`}
-                    title={`${r} verbleibend: ${resLeft[r]}`}
-                  >
-                    <span
-                      className="inline-flex items-center justify-center text-xl"
-                      style={{
-                        width: 34,
-                        height: 34,
-                        background: resColor(r),
-                        clipPath: "polygon(25% 6.7%, 75% 6.7%, 100% 50%, 75% 93.3%, 25% 93.3%, 0% 50%)",
-                      }}
+        {/* Builder toolbar (only on /evaluate) */}
+        {isBuilder ? (
+          <div className="rounded-2xl border bg-white shadow-sm p-2">
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                {(Object.keys(RESOURCE_COUNTS) as Resource[]).map((r) => {
+                  const active = brush === r;
+                  const disabled = resLeft[r] <= 0 && !active;
+                  return (
+                    <button
+                      key={r}
+                      type="button"
+                      disabled={disabled}
+                      onClick={() => setBrush(r)}
+                      className={`shrink-0 rounded-2xl border px-3 py-2 flex items-center gap-2 shadow-sm transition ${
+                        active ? "bg-black text-white border-black" : "bg-white hover:shadow-md"
+                      } ${disabled ? "opacity-40 cursor-not-allowed" : ""}`}
+                      title={`${resLabel(r)} remaining: ${resLeft[r]}`}
                     >
-                      {resIcon(r)}
-                    </span>
-                    <div className="text-left leading-tight">
-                      <div className="text-sm font-semibold capitalize">{r}</div>
-                      <div className={`text-xs ${active ? "text-white/70" : "text-slate-500"}`}>{resLeft[r]} left</div>
-                    </div>
+                      <span
+                        className="inline-flex items-center justify-center text-xl"
+                        style={{
+                          width: 34,
+                          height: 34,
+                          background: resColor(r),
+                          clipPath:
+                            "polygon(25% 6.7%, 75% 6.7%, 100% 50%, 75% 93.3%, 25% 93.3%, 0% 50%)",
+                        }}
+                      >
+                        {resEmoji(r)}
+                      </span>
+                      <div className="text-left leading-tight">
+                        <div className="text-sm font-semibold">{resLabel(r)}</div>
+                        <div className={`text-xs ${active ? "text-white/70" : "text-slate-500"}`}>{resLeft[r]} left</div>
+                      </div>
+                    </button>
+                  );
+                })}
+
+                <button
+                  type="button"
+                  onClick={() => setBrush("erase")}
+                  className={`shrink-0 rounded-2xl border px-3 py-2 flex items-center gap-2 shadow-sm transition ${
+                    brush === "erase" ? "bg-black text-white border-black" : "bg-white hover:shadow-md"
+                  }`}
+                  title="Erase (clear resource + number)"
+                >
+                  <span className="inline-flex items-center justify-center text-xl" style={{ width: 34, height: 34 }}>
+                    🧽
+                  </span>
+                  <div className="text-left leading-tight">
+                    <div className="text-sm font-semibold">Erase</div>
+                    <div className={`text-xs ${brush === "erase" ? "text-white/70" : "text-slate-500"}`}>clear</div>
+                  </div>
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-xs text-slate-500">Pick a brush → click hexes. Click hex again to set its number.</div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={onRandomizeExternal ?? randomizeInternal}
+                    className="rounded-xl border bg-white px-3 py-2 text-sm shadow-sm hover:shadow-md transition"
+                    type="button"
+                  >
+                    Randomize
                   </button>
-                );
-              })}
-
-              <button
-                type="button"
-                onClick={() => setBrush("erase")}
-                className={`shrink-0 rounded-2xl border px-3 py-2 flex items-center gap-2 shadow-sm transition ${
-                  brush === "erase" ? "bg-black text-white border-black" : "bg-white hover:shadow-md"
-                }`}
-                title="Erase (setzt res+num leer)"
-              >
-                <span className="inline-flex items-center justify-center text-xl" style={{ width: 34, height: 34 }}>
-                  🧽
-                </span>
-                <div className="text-left leading-tight">
-                  <div className="text-sm font-semibold">Erase</div>
-                  <div className={`text-xs ${brush === "erase" ? "text-white/70" : "text-slate-500"}`}>clear</div>
+                  <button
+                    onClick={onResetExternal ?? resetBoardInternal}
+                    className="rounded-xl border bg-white px-3 py-2 text-sm shadow-sm hover:shadow-md transition"
+                    type="button"
+                  >
+                    Reset
+                  </button>
                 </div>
-              </button>
-            </div>
-
-            <div className="flex items-center gap-2 justify-end">
-              <button
-                onClick={randomize}
-                className="rounded-xl border bg-white px-3 py-2 text-sm shadow-sm hover:shadow-md transition"
-                type="button"
-              >
-                Randomize
-              </button>
-              <button
-                onClick={resetBoard}
-                className="rounded-xl border bg-white px-3 py-2 text-sm shadow-sm hover:shadow-md transition"
-                type="button"
-              >
-                Reset
-              </button>
-              <button
-                onClick={saveBoard}
-                disabled={saving}
-                className={`rounded-xl border px-3 py-2 text-sm shadow-sm transition ${
-                  saving ? "bg-slate-100 text-slate-500" : "bg-black text-white border-black hover:opacity-95"
-                }`}
-                type="button"
-              >
-                {saving ? "Saving…" : "Save"}
-              </button>
+              </div>
             </div>
           </div>
+        ) : null}
 
-          <div className="mt-2 text-xs text-slate-500">
-            Brush wählen → Hex klicken zum „Malen“. Zahlen: Hex klicken → Popover.
-          </div>
-        </div>
+        {/* BOARD */}
+       <div
+  data-board-wrap="1"
+  ref={hostRef}
+  className="
+    relative flex justify-center overflow-hidden
+    -mx-2 sm:mx-0
+    rounded-none sm:rounded-3xl
+    border-y sm:border
+    bg-gradient-to-b from-slate-100 to-slate-50
+    shadow-none sm:shadow-sm
+    p-1.5 sm:p-2
+  "
+>
+          {toast ? (
+            <div className="absolute z-50 top-3 left-1/2 -translate-x-1/2 rounded-2xl border bg-white/95 shadow-lg px-3 py-2 text-sm">
+              {toast}
+            </div>
+          ) : null}
 
-        {/* BOARD CARD (highlighted) */}
-        <div
-          data-board-wrap="1"
-          ref={hostRef}
-          className="relative rounded-3xl border bg-gradient-to-b from-slate-100 to-slate-50 shadow-sm p-2 flex justify-center overflow-hidden"
-        >
           <div
             className="relative"
             style={{
@@ -376,8 +425,8 @@ export default function BoardEditor({
               transformOrigin: "top center",
             }}
           >
-            {/* Number popover */}
-            {selected && selectedCenter && (
+            {/* Number popover (builder only) */}
+            {isBuilder && selected && selectedCenter ? (
               <div
                 data-popover="num"
                 className="absolute z-40 rounded-2xl border bg-white shadow-lg p-3"
@@ -390,15 +439,15 @@ export default function BoardEditor({
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="text-sm font-semibold">Zahl wählen</div>
+                    <div className="text-sm font-semibold">Choose number</div>
                     <div className="text-xs text-slate-500">
                       {selectedTile ? (
                         <>
-                          Feld <span className="font-mono font-semibold">{fieldLabel(selectedTile.q, selectedTile.r)}</span>{" "}
-                          {selectedTile.res ? `· ${selectedTile.res}` : "· (leer)"}
+                          Tile <span className="font-mono font-semibold">{fieldLabel(selectedTile.q, selectedTile.r)}</span>{" "}
+                          {selectedTile.res ? `· ${resLabel(selectedTile.res)}` : "· (empty)"}
                         </>
                       ) : (
-                        "Kein Feld"
+                        "No tile"
                       )}
                     </div>
                   </div>
@@ -426,7 +475,7 @@ export default function BoardEditor({
                       setNumber(selectedTile.q, selectedTile.r, null);
                     }}
                   >
-                    leer
+                    empty
                   </button>
 
                   {NUMBER_LIST.map((n) => {
@@ -440,7 +489,9 @@ export default function BoardEditor({
                         disabled={disabled}
                         className={`rounded-xl border px-3 py-2 text-sm font-mono transition ${
                           disabled ? "opacity-40 cursor-not-allowed" : "bg-white hover:bg-slate-50"
-                        } ${isRed(n) ? "text-red-600 font-semibold" : ""} ${isCurrent ? "bg-black text-white hover:bg-black" : ""}`}
+                        } ${isRed(n) ? "text-red-600 font-semibold" : ""} ${
+                          isCurrent ? "bg-black text-white hover:bg-black" : ""
+                        }`}
                         type="button"
                         onClick={() => {
                           if (!selectedTile) return;
@@ -454,11 +505,11 @@ export default function BoardEditor({
                   })}
                 </div>
 
-                {!canEditNumber && (
-                  <div className="mt-2 text-xs text-amber-700">Zahlen gehen nur auf Nicht-Wüste Felder (mit Rohstoff).</div>
-                )}
+                {!canEditNumber ? (
+                  <div className="mt-2 text-xs text-amber-700">Numbers only work on non-desert resource tiles.</div>
+                ) : null}
               </div>
-            )}
+            ) : null}
 
             {/* Click hit-areas */}
             {tiles.map((t) => {
@@ -477,16 +528,19 @@ export default function BoardEditor({
                     width: size * 1.9,
                     height: size * 1.9,
                     transform: "translate(-50%, -50%)",
-                    clipPath: "polygon(25% 6.7%, 75% 6.7%, 100% 50%, 75% 93.3%, 25% 93.3%, 0% 50%)",
+                    clipPath:
+                      "polygon(25% 6.7%, 75% 6.7%, 100% 50%, 75% 93.3%, 25% 93.3%, 0% 50%)",
                     background: isSel ? "rgba(0,0,0,0.05)" : "transparent",
                     outline: isSel ? "3px solid #111" : "none",
                     borderRadius: 16,
-                    cursor: "pointer",
+                    cursor: isBuilder ? "pointer" : "default",
                     touchAction: "manipulation",
                     zIndex: 20,
                   }}
                   onClick={(e) => {
                     e.stopPropagation();
+                    if (!isBuilder) return;
+
                     applyBrushToTile(t.q, t.r);
                     setSelected({ q: t.q, r: t.r });
                     setSelectedCenter({ cx, cy });
@@ -512,11 +566,13 @@ export default function BoardEditor({
                 return (
                   <g key={`hex-${t.q},${t.r}`}>
                     <polygon points={poly} fill={resColor(t.res)} stroke="#2b2b2b" strokeWidth={1.2} />
+
                     <text x={cx} y={cy - 26} textAnchor="middle" fontSize="11" fill="#111">
                       {fieldLabel(t.q, t.r)}
                     </text>
+
                     <text x={cx} y={cy - 4} textAnchor="middle" fontSize="22">
-                      {resIcon(t.res)}
+                      {resEmoji(t.res)}
                     </text>
 
                     <circle cx={cx} cy={cy + 22} r={15} fill="#fff" stroke="#111" strokeWidth={1} />
@@ -540,7 +596,7 @@ export default function BoardEditor({
                 );
               })}
 
-              {/* premium start markers */}
+              {/* Premium-only start markers */}
               {premium
                 ? startSpots.slice(0, topN).map((v) => {
                     const mx = v.x + offsetX;
@@ -561,189 +617,117 @@ export default function BoardEditor({
         </div>
       </div>
 
-      {/* RIGHT COLUMN */}
+      {/* RIGHT */}
       <aside className="space-y-3">
-        {/* Mobile: collapsible panels */}
-        <div className="lg:hidden space-y-3">
-          <details className="rounded-3xl border bg-white shadow-sm p-3" open>
-            <summary className="cursor-pointer text-sm font-semibold">Scores & Settings</summary>
-            <div className="mt-3 space-y-3">
-              <SettingsCard premium={premium} setPremium={setPremium} playerCount={playerCount} setPlayerCount={setPlayerCount} />
-              <BalanceCard score={metrics.score} />
-              <StrengthCard strengths={metrics.strengths} />
-              <StartSpotsCard premium={premium} playerCount={playerCount} startSpots={startSpots.slice(0, topN)} />
-            </div>
-          </details>
+        <BalanceHero score={metrics.score} />
 
-          <details className="rounded-3xl border bg-white shadow-sm p-3">
-            <summary className="cursor-pointer text-sm font-semibold">Ranking</summary>
-            <div className="mt-3">
-              <RankingPanel
-                refreshSignal={rankingRefresh}
-                onLoadBoard={(t) => {
-                  onChange(t);
-                  setSelected(null);
-                  setSelectedCenter(null);
-                }}
-              />
+        <div className="rounded-3xl border bg-white shadow-sm p-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-sm font-semibold">Premium</div>
+            <button
+              type="button"
+              className={`rounded-xl border px-3 py-2 text-sm shadow-sm transition ${
+                premium ? "bg-black text-white border-black" : "bg-white hover:shadow-md"
+              }`}
+              onClick={() => onPremiumChange(!premium)}
+            >
+              {premium ? "On" : "Off"}
+            </button>
+          </div>
+
+          <div className="mt-3 flex items-center justify-between gap-2">
+            <div className="text-sm text-slate-600">Players</div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className={`rounded-xl border px-3 py-2 text-sm ${playerCount === 3 ? "bg-black text-white border-black" : "bg-white"}`}
+                onClick={() => onPlayerCountChange(3)}
+              >
+                3
+              </button>
+              <button
+                type="button"
+                className={`rounded-xl border px-3 py-2 text-sm ${playerCount === 4 ? "bg-black text-white border-black" : "bg-white"}`}
+                onClick={() => onPlayerCountChange(4)}
+              >
+                4
+              </button>
             </div>
-          </details>
+          </div>
+
+          <div className="mt-2 text-xs text-slate-500">
+            Premium shows the start position markers on the board.
+          </div>
         </div>
 
-        {/* Desktop: normal side panels */}
-        <div className="hidden lg:block space-y-3">
-          <SettingsCard premium={premium} setPremium={setPremium} playerCount={playerCount} setPlayerCount={setPlayerCount} />
-          <BalanceCard score={metrics.score} />
-          <StrengthCard strengths={metrics.strengths} />
-          <StartSpotsCard premium={premium} playerCount={playerCount} startSpots={startSpots.slice(0, topN)} />
+        {showStartSpotList ? (
+          <div className="rounded-3xl border bg-white shadow-sm p-3">
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-semibold">Best Start Spots</div>
+              <div className="text-xs text-slate-500">{playerCount === 3 ? "Top 6" : "Top 8"}</div>
+            </div>
 
-          <RankingPanel
-            refreshSignal={rankingRefresh}
-            onLoadBoard={(t) => {
-              onChange(t);
-              setSelected(null);
-              setSelectedCenter(null);
-            }}
-          />
+            {!premium ? (
+              <div className="mt-2 text-sm text-slate-600">Premium is off → hidden.</div>
+            ) : (
+              <div className="mt-2 space-y-2">
+                {startSpots.slice(0, topN).map((s) => (
+                  <div key={s.id} className="flex items-center justify-between rounded-2xl border bg-slate-50 px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <div className="h-7 w-7 rounded-xl bg-black text-white flex items-center justify-center font-extrabold text-xs">
+                        {s.rank}
+                      </div>
+                      <div className="text-sm text-slate-700">Spot</div>
+                    </div>
+                    <div className="font-mono text-sm font-semibold">{s.score}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : null}
+
+        {/* small status */}
+        <div className="rounded-3xl border bg-white shadow-sm p-3">
+          <div className="text-sm font-semibold">Status</div>
+          <div className="mt-2 text-sm text-slate-700">
+            {isPremiumFair ? (
+              <span className="font-semibold text-emerald-700">≥ {PREMIUM_THRESHOLD} (Premium-fair)</span>
+            ) : (
+              <span className="text-slate-600">Below ≥ {PREMIUM_THRESHOLD}</span>
+            )}
+          </div>
         </div>
       </aside>
     </div>
   );
 }
 
-/* ---------- small UI subcomponents ---------- */
+function BalanceHero({ score }: { score: number }) {
+  const hit = score >= 90;
 
-function SettingsCard({
-  premium,
-  setPremium,
-  playerCount,
-  setPlayerCount,
-}: {
-  premium: boolean;
-  setPremium: (v: boolean | ((p: boolean) => boolean)) => void;
-  playerCount: PlayerCount;
-  setPlayerCount: (v: PlayerCount) => void;
-}) {
   return (
-    <div className="rounded-3xl border bg-white shadow-sm p-3">
-      <div className="flex items-center justify-between gap-2">
-        <div className="text-sm font-semibold">Settings</div>
-        <button
-          type="button"
-          className={`rounded-xl border px-3 py-2 text-sm shadow-sm transition ${
-            premium ? "bg-black text-white border-black" : "bg-white hover:shadow-md"
-          }`}
-          onClick={() => setPremium((p) => !p)}
-        >
-          Premium {premium ? "On" : "Off"}
-        </button>
-      </div>
+    <div
+      className={`rounded-3xl border shadow-sm p-4 text-white bg-gradient-to-br ${balanceTone(score)} ring-1 ${balanceRing(
+        score
+      )}`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-xs/5 opacity-90">Balance</div>
 
-      <div className="mt-2 flex items-center justify-between gap-2">
-        <div className="text-sm text-slate-600">Players</div>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            className={`rounded-xl border px-3 py-2 text-sm ${playerCount === 3 ? "bg-black text-white border-black" : "bg-white"}`}
-            onClick={() => setPlayerCount(3)}
-          >
-            3
-          </button>
-          <button
-            type="button"
-            className={`rounded-xl border px-3 py-2 text-sm ${playerCount === 4 ? "bg-black text-white border-black" : "bg-white"}`}
-            onClick={() => setPlayerCount(4)}
-          >
-            4
-          </button>
+          <div className="mt-1 text-4xl font-extrabold tracking-tight">
+            {hit ? ">90" : score}
+            <span className="ml-2 text-sm font-semibold opacity-90">/ 100</span>
+          </div>
+
+          <div className="mt-1 text-xs opacity-90">{hit ? "Excellent ✅" : "Higher = more even"}</div>
         </div>
-      </div>
-    </div>
-  );
-}
 
-function BalanceCard({ score }: { score: number }) {
-  return (
-    <div className="rounded-3xl border bg-white shadow-sm p-3">
-      <div className="text-sm font-semibold">Balance Score</div>
-      <div className="mt-2 flex items-center gap-3">
-        <div className={`h-10 w-10 rounded-2xl ${balanceColor(score)} flex items-center justify-center text-white font-extrabold`}>
-          {score}
+        <div className="shrink-0 rounded-2xl bg-white/15 px-3 py-2 text-center">
+          <div className="text-[10px] uppercase tracking-wider opacity-90">Premium</div>
+          <div className="text-lg font-extrabold">{hit ? "Excellent" : "—"}</div>
         </div>
-        <div className="text-sm text-slate-600">0–100 (höher = gleichmäßiger).</div>
-      </div>
-    </div>
-  );
-}
-
-function StrengthCard({ strengths }: { strengths: Record<string, number> }) {
-  const order = ["holz", "lehm", "schaf", "getreide", "stein"];
-  const max = Math.max(1, ...order.map((k) => strengths[k] ?? 0));
-  return (
-    <div className="rounded-3xl border bg-white shadow-sm p-3">
-      <div className="text-sm font-semibold">Resource Strength</div>
-      <div className="mt-2 space-y-2">
-        {order.map((r) => {
-          const v = strengths[r] ?? 0;
-          const pct = Math.round((v / max) * 100);
-          const col = resColor(r as any);
-          return (
-            <div key={r} className="space-y-1">
-              <div className="flex items-center justify-between text-xs text-slate-600">
-                <span className="flex items-center gap-2">
-                  <span className="inline-flex w-7 justify-center">{resIcon(r as any)}</span>
-                  <span className="capitalize">{r}</span>
-                </span>
-                <span className="font-mono">{v}</span>
-              </div>
-              <div className="h-2 rounded-full bg-slate-200 overflow-hidden">
-                <div className="h-full" style={{ width: `${pct}%`, background: col }} />
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      <div className="mt-2 text-xs text-slate-500">Stärke = Summe Pips über alle Felder je Ressource.</div>
-    </div>
-  );
-}
-
-function StartSpotsCard({
-  premium,
-  playerCount,
-  startSpots,
-}: {
-  premium: boolean;
-  playerCount: PlayerCount;
-  startSpots: Array<{ id: string; rank: number; score: number }>;
-}) {
-  return (
-    <div className="rounded-3xl border bg-white shadow-sm p-3">
-      <div className="flex items-center justify-between">
-        <div className="text-sm font-semibold">Top Start Spots</div>
-        <div className="text-xs text-slate-500">{playerCount === 3 ? "Top 6" : "Top 8"}</div>
-      </div>
-
-      {!premium ? (
-        <div className="mt-2 text-sm text-slate-600">Premium ist aus → Marker & Liste versteckt.</div>
-      ) : (
-        <div className="mt-2 space-y-2">
-          {startSpots.map((s) => (
-            <div key={s.id} className="flex items-center justify-between rounded-2xl border bg-slate-50 px-3 py-2">
-              <div className="flex items-center gap-2">
-                <div className="h-7 w-7 rounded-xl bg-black text-white flex items-center justify-center font-extrabold text-xs">
-                  {s.rank}
-                </div>
-                <div className="text-sm text-slate-700">Spot</div>
-              </div>
-              <div className="font-mono text-sm font-semibold">{s.score}</div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <div className="mt-2 text-xs text-slate-500">
-        Liste minimal: Rang + Score. Marker erscheinen auf dem Board (Premium).
       </div>
     </div>
   );

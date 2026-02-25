@@ -1,41 +1,44 @@
 "use client";
 
-import React from "react";
-import BoardEditor from "@/components/BoardEditor";
-import type { Tile } from "@/lib/catan/types";
-
-function makeDefaultTiles(): Tile[] {
-  const tiles: Tile[] = [];
-  const R = 2;
-  for (let q = -R; q <= R; q++) {
-    for (let r = -R; r <= R; r++) {
-      const s = -q - r;
-      if (Math.max(Math.abs(q), Math.abs(r), Math.abs(s)) <= R) tiles.push({ q, r, res: null, num: null });
-    }
-  }
-  tiles.sort((a, b) => (a.r !== b.r ? a.r - b.r : a.q - b.q));
-  return tiles;
-}
+import Link from "next/link";
 
 export default function Page() {
-  const [tiles, setTiles] = React.useState<Tile[]>(() => makeDefaultTiles());
-
   return (
     <main className="min-h-[100dvh] bg-slate-50">
-      <div className="mx-auto w-full max-w-7xl px-3 sm:px-4 py-3 sm:py-5">
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <h1 className="text-lg sm:text-2xl font-semibold tracking-tight text-slate-900">
-              Catan Evaluator
-            </h1>
-            <p className="text-xs sm:text-sm text-slate-600">
-              Brush Rohstoffe · Zahlen Popover · Balance · Ranking
-            </p>
-          </div>
+      <div className="mx-auto w-full max-w-6xl px-4 py-8">
+        <div className="flex flex-col gap-2">
+          <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900">Catan Evaluator</h1>
+          <p className="text-sm text-slate-600">
+            Two modes: generate great boards, or evaluate your own board.
+          </p>
         </div>
 
-        <div className="mt-3">
-          <BoardEditor tiles={tiles} onChange={setTiles} />
+        <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Link
+            href="/random"
+            className="rounded-3xl border bg-white shadow-sm p-5 hover:shadow-md transition"
+          >
+            <div className="text-sm font-semibold text-slate-900">🎲 Find Boards</div>
+            <div className="mt-1 text-sm text-slate-600">
+              Use the randomizer to discover boards, see their Balance score and best start spots.
+            </div>
+            <div className="mt-4 inline-flex rounded-xl bg-black text-white px-3 py-2 text-sm font-semibold">
+              Open Randomizer
+            </div>
+          </Link>
+
+          <Link
+            href="/evaluate"
+            className="rounded-3xl border bg-white shadow-sm p-5 hover:shadow-md transition"
+          >
+            <div className="text-sm font-semibold text-slate-900">🧩 Evaluate Your Board</div>
+            <div className="mt-1 text-sm text-slate-600">
+              Paint resources & pick numbers, then check Balance and best start spots.
+            </div>
+            <div className="mt-4 inline-flex rounded-xl bg-black text-white px-3 py-2 text-sm font-semibold">
+              Open Editor
+            </div>
+          </Link>
         </div>
       </div>
     </main>
