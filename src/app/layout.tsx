@@ -28,3 +28,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     </html>
   );
 }
+export const metadata = {
+  title: "Catan Board Evaluator & Catan Board Finder",
+  description:
+    "Generate balanced Catan boards, analyze resource distribution and find the best starting positions instantly.",
+  keywords: [
+    "Catan board generator",
+    "Catan board randomizer",
+    "Catan board evaluator",
+    "Settlers of Catan strategy",
+    "Catan best starting positions",
+    "Catan balanced board"
+  ],
+};

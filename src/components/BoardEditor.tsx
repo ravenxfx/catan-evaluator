@@ -734,14 +734,15 @@ export default function BoardEditor({
             <div className="rounded-3xl border bg-white shadow-sm p-4">
               <div className="text-sm font-semibold">Resource Strength</div>
               <div className="mt-3 space-y-2">
-                {(["holz", "lehm", "schaf", "getreide", "stein"] as Resource[]).map((r) => {
-                  const v = metrics.strengths[r as any] ?? 0;
-                  const max = Math.max(
-                    1,
-                    ...(["holz", "lehm", "schaf", "getreide", "stein"] as Resource[]).map(
-                      (rr) => metrics.strengths[rr as any] ?? 0
-                    )
-                  );
+               {(["holz", "lehm", "schaf", "getreide", "stein"] as Resource[]).map((r) => {
+  const v = metrics.strengths[r] ?? 0;
+
+  const max = Math.max(
+    1,
+    ...(["holz", "lehm", "schaf", "getreide", "stein"] as Resource[]).map(
+      (rr) => metrics.strengths[rr] ?? 0
+    )
+  );
                   const pct = Math.round((v / max) * 100);
                   return (
                     <div key={r} className="space-y-1">
