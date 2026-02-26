@@ -321,7 +321,15 @@ export default function BoardEditor({
 
   return (
     <>
-      {gate ? <AdGate seconds={3} title="Sponsored" subtitle="One moment…" onDone={finishGate} /> : null}
+      {gate ? (
+  <AdGate
+    slot={gate.action === "superSearch" ? "super-search" : "start-positions"}
+    seconds={3}
+    title="Sponsored"
+    subtitle="One moment…"
+    onDone={finishGate}
+  />
+) : null} /> : null}
 
       {/* Mobile first: options on top, board big, metrics below (on mobile) */}
       <div className="space-y-3">
