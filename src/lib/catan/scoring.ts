@@ -1,5 +1,24 @@
-import { NUMBER_COUNTS, PlayerCount, Resource, RESOURCE_COUNTS, Tile } from "./types";
+import type { PlayerCount, Resource, Tile } from "./types";
+import { NUMBER_COUNTS, RESOURCE_COUNTS } from "./types";
 import { pipValue } from "./pips";
+
+/**
+ * Default empty board (radius 2 => 19 tiles)
+ */
+export function makeDefaultTiles(): Tile[] {
+  const tiles: Tile[] = [];
+  const R = 2;
+  for (let q = -R; q <= R; q++) {
+    for (let r = -R; r <= R; r++) {
+      const s = -q - r;
+      if (Math.max(Math.abs(q), Math.abs(r), Math.abs(s)) <= R) {
+        tiles.push({ q, r, res: null, num: null });
+      }
+    }
+  }
+  tiles.sort((a, b) => (a.r !== b.r ? a.r - b.r : a.q - b.q));
+  return tiles;
+}
 
 /**
  * Resource Strength = sum of pipValue across all tiles of that resource.
@@ -46,18 +65,6 @@ export function balanceScore(tiles: Tile[]): { score: number; strengths: Record<
   return { score: Math.max(0, Math.min(100, Math.round(raw))), strengths };
 }
 
-/**
- * Generate all unique vertices of the hex board and score them.
- * Vertex = intersection point where settlements can be placed (hex corners).
- *
- * We compute corners from each tile center, deduplicate by rounding.
- * For each vertex, collect adjacent tiles (0..3).
- * Score:
- * - base = sum pipValue(num) of adjacent tiles with a non-desert resource
- * - apply "missing/penalty" factor = (#resourceTiles)/3
- *   => desert counts like missing (exactly same as "outside")
- * - diversity bonus: +0.75 per distinct resource beyond the first
- */
 export type ScoredVertex = {
   id: string; // stable key
   x: number;
@@ -86,14 +93,16 @@ function hexCornerPoints(cx: number, cy: number, size: number) {
 }
 
 function roundKey(x: number, y: number) {
-  // rounding tolerance for merging shared vertices
   const rx = Math.round(x * 1000) / 1000;
   const ry = Math.round(y * 1000) / 1000;
   return `${rx},${ry}`;
 }
 
+/**
+ * Score settlement vertices (hex corners).
+ * Desert counts like "missing tile" (same penalty as outside).
+ */
 export function scoreVertices(tiles: Tile[], size = 58): ScoredVertex[] {
-  // Build vertex map -> which tiles touch this vertex
   const vmap = new Map<
     string,
     {
@@ -104,7 +113,7 @@ export function scoreVertices(tiles: Tile[], size = 58): ScoredVertex[] {
   >();
 
   for (const t of tiles) {
-    if (!t.res) continue; // unassigned tile does not contribute
+    if (!t.res) continue;
     const center = axialToPixel(t.q, t.r, size);
     const corners = hexCornerPoints(center.x, center.y, size);
 
@@ -116,7 +125,6 @@ export function scoreVertices(tiles: Tile[], size = 58): ScoredVertex[] {
       if (!cur) {
         vmap.set(k, { x: c.x, y: c.y, adj: [entry] });
       } else {
-        // avoid dup tile
         if (!cur.adj.some((a) => a.tileKey === entry.tileKey)) cur.adj.push(entry);
       }
     }
@@ -125,17 +133,15 @@ export function scoreVertices(tiles: Tile[], size = 58): ScoredVertex[] {
   const scored: ScoredVertex[] = [];
 
   for (const [k, v] of vmap.entries()) {
-    // settlements can only be on vertices adjacent to at least 1 resource tile
     const resourceAdj = v.adj.filter((a) => a.res !== "wueste");
     const resourceCount = resourceAdj.length; // 0..3
-    if (resourceCount === 0) continue; // only desert touching (rare) -> ignore
+    if (resourceCount === 0) continue;
 
     const base = resourceAdj.reduce((sum, a) => sum + pipValue(a.num), 0);
 
     // desert counts like outside => factor by resourceCount/3
     const factor = resourceCount / 3;
 
-    // diversity bonus
     const distinct = new Set(resourceAdj.map((a) => a.res)).size;
     const diversityBonus = distinct <= 1 ? 0 : 0.75 * (distinct - 1);
 
@@ -150,15 +156,10 @@ export function scoreVertices(tiles: Tile[], size = 58): ScoredVertex[] {
     });
   }
 
-  // higher score first
   scored.sort((a, b) => b.score - a.score);
   return scored;
 }
 
-/**
- * Pick best start spots depending on player count (3->6 spots, 4->8 spots).
- * We keep it simple: top N vertices by score.
- */
 export function bestStartSpots(tiles: Tile[], playerCount: PlayerCount) {
   const all = scoreVertices(tiles);
   const n = playerCount === 3 ? 6 : 8;
@@ -170,42 +171,33 @@ export function bestStartSpots(tiles: Tile[], playerCount: PlayerCount) {
 }
 
 /**
- * Randomize board respecting official counts:
- * - resources according to RESOURCE_COUNTS
- * - numbers according to NUMBER_COUNTS (desert gets null)
- * No additional constraints (6/8 adjacency allowed).
+ * Randomize board respecting official counts.
  */
 export function randomizeBoard(tiles: Tile[], rng = Math.random): Tile[] {
   const next = tiles.map((t) => ({ ...t }));
 
-  // resources pool
   const resPool: Resource[] = [];
   (Object.keys(RESOURCE_COUNTS) as Resource[]).forEach((r) => {
     for (let i = 0; i < RESOURCE_COUNTS[r]; i++) resPool.push(r);
   });
-
   shuffle(resPool, rng);
 
-  // assign resources
   for (let i = 0; i < next.length; i++) {
     next[i].res = resPool[i] ?? null;
     next[i].num = null;
   }
 
-  // numbers pool for non-desert
   const numPool: number[] = [];
   Object.entries(NUMBER_COUNTS).forEach(([k, cnt]) => {
     const n = Number(k);
     for (let i = 0; i < cnt; i++) numPool.push(n);
   });
-
   shuffle(numPool, rng);
 
   let ptr = 0;
   for (const t of next) {
-    if (t.res === "wueste") {
-      t.num = null;
-    } else {
+    if (t.res === "wueste") t.num = null;
+    else {
       t.num = numPool[ptr] ?? null;
       ptr++;
     }

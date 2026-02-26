@@ -157,7 +157,7 @@ export default function RandomPage() {
           <BoardEditor
             tiles={tiles}
             onChange={setTiles}
-            mode="random"
+            mode="find"
             playerCount={playerCount}
             onPlayerCountChange={setPlayerCount}
             premium={premium}
