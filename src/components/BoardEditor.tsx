@@ -1,10 +1,17 @@
+// src/components/BoardEditor.tsx
 "use client";
 
 import React from "react";
 import { AdGate } from "@/components/AdGate";
+import { AdSenseSlot } from "@/components/AdSenseSlot";
 import { balanceScore, bestStartSpots, makeDefaultTiles, randomizeBoard } from "@/lib/catan/scoring";
 import { isRed, pipValue } from "@/lib/catan/pips";
 import { NUMBER_COUNTS, NUMBER_LIST, PlayerCount, Resource, RESOURCE_COUNTS, Tile } from "@/lib/catan/types";
+
+// ✅ Put your AdSense SLOT IDs here:
+const SLOT_GATE_SUPERSEARCH = "0000000000"; // overlay slot
+const SLOT_GATE_STARTSPOTS = "0000000001"; // overlay slot
+const SLOT_PAGE_BANNER = "0000000002"; // page banner slot
 
 const CANVAS_W = 920;
 const CANVAS_H = 620;
@@ -72,11 +79,6 @@ function balanceColor(score: number) {
   return "bg-red-600";
 }
 
-function prettyBalance(score: number) {
-  if (score >= 90) return { text: ">90", tag: "Excellent" };
-  return { text: String(score), tag: "Balance" };
-}
-
 function axialToPixel(q: number, r: number, size: number) {
   const x = size * Math.sqrt(3) * (q + r / 2);
   const y = size * (3 / 2) * r;
@@ -101,17 +103,28 @@ function fieldLabel(q: number, r: number) {
 
 function createPoolsFromTiles(tiles: Tile[]) {
   const resLeft: Record<Resource, number> = { ...RESOURCE_COUNTS };
-  for (const t of tiles) {
-    if (t.res) resLeft[t.res] = Math.max(0, (resLeft[t.res] ?? 0) - 1);
-  }
+  for (const t of tiles) if (t.res) resLeft[t.res] = Math.max(0, (resLeft[t.res] ?? 0) - 1);
 
   const numLeft: Record<number, number> = { ...NUMBER_COUNTS };
-  for (const t of tiles) {
-    if (t.num != null) numLeft[t.num] = Math.max(0, (numLeft[t.num] ?? 0) - 1);
-  }
+  for (const t of tiles) if (t.num != null) numLeft[t.num] = Math.max(0, (numLeft[t.num] ?? 0) - 1);
 
   return { resLeft, numLeft };
 }
+
+function prettyBalance(score: number) {
+  if (score >= 90) return { text: ">90", tag: "Excellent" };
+  return { text: String(score), tag: "Balance" };
+}
+
+const primaryBtn =
+  "rounded-2xl px-5 py-3 text-base font-semibold text-white shadow-sm transition " +
+  "bg-gradient-to-b from-slate-900 to-slate-800 hover:opacity-95 active:scale-[0.99] " +
+  "focus:outline-none focus:ring-2 focus:ring-slate-400";
+
+const secondaryBtn =
+  "rounded-2xl px-5 py-3 text-base font-semibold shadow-sm transition " +
+  "border bg-white text-slate-900 hover:bg-slate-50 active:scale-[0.99] " +
+  "focus:outline-none focus:ring-2 focus:ring-slate-300";
 
 export default function BoardEditor({
   tiles,
@@ -129,7 +142,6 @@ export default function BoardEditor({
   const size = 58;
   const padding = 90;
 
-  // players
   const [playerCountLocal, setPlayerCountLocal] = React.useState<PlayerCount>(4);
   const effectivePlayerCount: PlayerCount = (playerCount ?? playerCountLocal) as PlayerCount;
 
@@ -138,28 +150,25 @@ export default function BoardEditor({
     if (!onPlayerCountChange) setPlayerCountLocal(v);
   };
 
-  // show markers only when user requests (esp. in find mode)
-  const [markersOn, setMarkersOn] = React.useState(mode === "builder");
-
-  // brush
+  const [markersOn, setMarkersOn] = React.useState(false);
   const [brush, setBrush] = React.useState<Resource | "erase" | null>("holz");
 
-  // number popover
   const [selected, setSelected] = React.useState<{ q: number; r: number } | null>(null);
   const [selectedCenter, setSelectedCenter] = React.useState<{ cx: number; cy: number } | null>(null);
 
-  // responsive scaling
   const hostRef = React.useRef<HTMLDivElement | null>(null);
   const [scale, setScale] = React.useState(1);
 
+  // ✅ Mobile overflow fix:
+  // - we compute scale from container width
+  // - and ALSO set the OUTER wrapper to scaled width/height so it doesn't overflow layout
   React.useEffect(() => {
     function recompute() {
       const el = hostRef.current;
       if (!el) return;
       const w = el.clientWidth;
-      // IMPORTANT: scale based on actual available width (prevents right overflow)
-      const s = Math.min(1, w / CANVAS_W);
-      setScale(Number.isFinite(s) ? Math.max(0.45, s) : 1);
+      const s = Math.min(1, (w - 8) / CANVAS_W);
+      setScale(Number.isFinite(s) ? Math.max(0.62, s) : 1);
     }
     recompute();
     window.addEventListener("resize", recompute);
@@ -173,7 +182,7 @@ export default function BoardEditor({
       const p = axialToPixel(t.q, t.r, size);
       return { ...t, x: p.x, y: p.y };
     });
-  }, [tiles]);
+  }, [tiles, size]);
 
   const { offsetX, offsetY } = React.useMemo(() => {
     const minX = Math.min(...positions.map((p) => p.x));
@@ -185,7 +194,7 @@ export default function BoardEditor({
     const ox = (CANVAS_W - contentW) / 2 + padding - minX;
     const oy = (CANVAS_H - contentH) / 2 + padding - minY;
     return { offsetX: ox, offsetY: oy };
-  }, [positions]);
+  }, [positions, padding]);
 
   const selectedTile = React.useMemo(() => {
     if (!selected) return null;
@@ -197,11 +206,11 @@ export default function BoardEditor({
   const metrics = React.useMemo(() => balanceScore(tiles), [tiles]);
   const startSpots = React.useMemo(() => bestStartSpots(tiles, effectivePlayerCount), [tiles, effectivePlayerCount]);
 
-  // Ad gate triggers for “Super Search” and “Show markers”
-  const [gate, setGate] = React.useState<null | { action: "superSearch" | "showMarkers" }>(null);
+  const [gate, setGate] = React.useState<null | { action: "aiSuperSearch" | "showMarkers"; slot: string }>(null);
 
-  function runAfterAd(action: "superSearch" | "showMarkers") {
-    setGate({ action });
+  function runAfterAd(action: "aiSuperSearch" | "showMarkers") {
+    const slot = action === "aiSuperSearch" ? SLOT_GATE_SUPERSEARCH : SLOT_GATE_STARTSPOTS;
+    setGate({ action, slot });
   }
 
   function finishGate() {
@@ -213,8 +222,8 @@ export default function BoardEditor({
       setMarkersOn(true);
       return;
     }
-    if (action === "superSearch") {
-      superSearch90();
+    if (action === "aiSuperSearch") {
+      aiSuperSearch90();
       return;
     }
   }
@@ -224,19 +233,19 @@ export default function BoardEditor({
     setSelected(null);
     setSelectedCenter(null);
     setBrush("holz");
-    setMarkersOn(mode === "builder");
+    setMarkersOn(false);
   }
 
   function randomize() {
     onChange(randomizeBoard(tiles));
     setSelected(null);
     setSelectedCenter(null);
-    setMarkersOn(mode === "builder");
+    setMarkersOn(false);
   }
 
-  // tries up to N random boards, picks the best found, early-exits at >=90
-  function superSearch90() {
-    const max = 250;
+  function aiSuperSearch90() {
+    // simple heuristic: try up to N random boards, keep the best; stop early if >= 90
+    const max = 260;
     let best = tiles;
     let bestScore = balanceScore(tiles).score;
 
@@ -249,10 +258,12 @@ export default function BoardEditor({
       }
       if (s >= 90) {
         onChange(candidate);
+        setMarkersOn(false);
         return;
       }
     }
     onChange(best);
+    setMarkersOn(false);
   }
 
   function applyBrushToTile(q: number, r: number) {
@@ -318,108 +329,108 @@ export default function BoardEditor({
   }, []);
 
   const balance = prettyBalance(metrics.score);
+  const scaledW = Math.round(CANVAS_W * scale);
+  const scaledH = Math.round(CANVAS_H * scale);
 
   return (
     <>
       {gate ? (
-  <AdGate
-    slot={gate.action === "superSearch" ? "super-search" : "start-positions"}
-    seconds={3}
-    title="Sponsored"
-    subtitle="One moment…"
-    onDone={finishGate}
-  />
-) : null}
+        <AdGate seconds={3} title="Sponsored" subtitle="One moment…" slot={gate.slot} onDone={finishGate} />
+      ) : null}
 
-      {/* Mobile first: options on top, board big, metrics below (on mobile) */}
-      <div className="space-y-3">
-        {/* TOP BAR (only one Randomize + Reset here) */}
-        <div className="rounded-3xl border bg-white shadow-sm p-3">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0">
-              <div className="text-sm font-semibold">{mode === "find" ? "Find Boards" : "Evaluate Board"}</div>
-              <div className="text-xs text-slate-500">
-                {mode === "find"
-                  ? "Randomize boards and optionally reveal best starting markers."
-                  : "Paint resources and set numbers to test a board."}
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                onClick={randomize}
-                className="rounded-2xl bg-black text-white px-5 py-3 text-base font-semibold shadow-sm hover:shadow-md transition flex items-center gap-2"
-                type="button"
-              >
-                🎲 Randomize
-              </button>
-              <button
-                onClick={resetBoard}
-                className="rounded-2xl border bg-white px-4 py-3 text-base shadow-sm hover:shadow-md transition"
-                type="button"
-              >
-                Reset
-              </button>
-            </div>
-          </div>
-
-          {/* FIND MODE OPTIONS (no extra Random/Reset here) */}
-          {mode === "find" ? (
-            <div className="mt-3 rounded-3xl border bg-slate-50 p-3">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="text-sm font-semibold">Options</div>
-
-                <div className="flex items-center gap-2">
-                  <div className="text-xs text-slate-600">Players</div>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      className={`rounded-xl border px-3 py-2 text-sm ${
-                        effectivePlayerCount === 3 ? "bg-black text-white border-black" : "bg-white"
-                      }`}
-                      onClick={() => setPlayerCountSafe(3)}
-                    >
-                      3
-                    </button>
-                    <button
-                      type="button"
-                      className={`rounded-xl border px-3 py-2 text-sm ${
-                        effectivePlayerCount === 4 ? "bg-black text-white border-black" : "bg-white"
-                      }`}
-                      onClick={() => setPlayerCountSafe(4)}
-                    >
-                      4
-                    </button>
-                  </div>
+      {/* Mobile-first: controls on top, board big, cards below; desktop: board + sidebar */}
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-3">
+        {/* LEFT */}
+        <div className="space-y-3">
+          {/* Header + primary actions */}
+          <div className="rounded-3xl border bg-white shadow-sm p-3">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-sm font-semibold">{mode === "find" ? "Find Boards" : "Evaluate Board"}</div>
+                <div className="text-xs text-slate-700">
+                  {mode === "find"
+                    ? "Randomize boards and reveal best start markers on the map."
+                    : "Paint resources and set numbers to test balance and start positions."}
                 </div>
               </div>
 
-              <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  className="rounded-2xl bg-black text-white py-3 font-semibold shadow-sm hover:shadow-md transition"
-                  onClick={() => runAfterAd("superSearch")}
-                >
-                  Super Search (≥ 90)
+              <div className="flex items-center gap-2">
+                <button onClick={randomize} className={primaryBtn} type="button">
+                  🎲 Randomize
                 </button>
-
-                <button
-                  type="button"
-                  className="rounded-2xl border py-3 font-semibold shadow-sm hover:shadow-md transition bg-white"
-                  onClick={() => runAfterAd("showMarkers")}
-                >
-                  Best Starting Positions
+                <button onClick={resetBoard} className={secondaryBtn} type="button">
+                  Reset
                 </button>
               </div>
             </div>
-          ) : null}
 
-          {/* BUILDER MODE BRUSH */}
+            {/* Page banner ad (optional) */}
+            <div className="mt-3 rounded-2xl border bg-white p-3">
+              <div className="text-[11px] text-slate-600 mb-2">Advertisement</div>
+              <AdSenseSlot slot={SLOT_PAGE_BANNER} className="min-h-[90px]" />
+            </div>
+
+            {mode === "find" ? (
+              <div className="mt-3 rounded-3xl border bg-slate-50 p-3">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div className="text-sm font-semibold">Options</div>
+
+                  <div className="flex items-center gap-2">
+                    <div className="text-xs text-slate-800">Players</div>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        className={`rounded-xl border px-3 py-2 text-sm font-semibold ${
+                          effectivePlayerCount === 3 ? "bg-slate-900 text-white border-slate-900" : "bg-white"
+                        }`}
+                        onClick={() => setPlayerCountSafe(3)}
+                      >
+                        3
+                      </button>
+                      <button
+                        type="button"
+                        className={`rounded-xl border px-3 py-2 text-sm font-semibold ${
+                          effectivePlayerCount === 4 ? "bg-slate-900 text-white border-slate-900" : "bg-white"
+                        }`}
+                        onClick={() => setPlayerCountSafe(4)}
+                      >
+                        4
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    className="rounded-2xl bg-slate-900 text-white py-3 font-semibold shadow-sm hover:opacity-95 active:scale-[0.99]"
+                    onClick={() => runAfterAd("aiSuperSearch")}
+                  >
+                    AI Super Search (≥ 90)
+                  </button>
+
+                  <button
+                    type="button"
+                    className="rounded-2xl border py-3 font-semibold shadow-sm hover:bg-white bg-white active:scale-[0.99]"
+                    onClick={() => runAfterAd("showMarkers")}
+                  >
+                    Best Starting Positions
+                  </button>
+                </div>
+
+                <div className="mt-2 text-xs text-slate-700">
+                  Ads appear when you press these buttons.
+                </div>
+              </div>
+            ) : null}
+          </div>
+
+          {/* Builder brush */}
           {mode === "builder" ? (
-            <div className="mt-3 rounded-3xl border bg-white p-3">
+            <div className="rounded-3xl border bg-white shadow-sm p-3">
               <div className="flex items-center justify-between gap-2">
                 <div className="text-sm font-semibold">Brush</div>
-                <div className="text-xs text-slate-500">Tap hex to paint • Tap again to pick number</div>
+                <div className="text-xs text-slate-700">Tap hex to paint • Tap again to pick number</div>
               </div>
 
               <div className="mt-3 flex items-center gap-2 overflow-x-auto pb-1">
@@ -433,7 +444,7 @@ export default function BoardEditor({
                       disabled={disabled}
                       onClick={() => setBrush(r)}
                       className={`shrink-0 rounded-2xl border px-3 py-2 flex items-center gap-2 shadow-sm transition ${
-                        active ? "bg-black text-white border-black" : "bg-white hover:shadow-md"
+                        active ? "bg-slate-900 text-white border-slate-900" : "bg-white hover:shadow-md"
                       } ${disabled ? "opacity-40 cursor-not-allowed" : ""}`}
                       title={`${resLabel(r)} remaining: ${resLeft[r]}`}
                     >
@@ -451,9 +462,7 @@ export default function BoardEditor({
                       </span>
                       <div className="text-left leading-tight">
                         <div className="text-sm font-semibold">{resLabel(r)}</div>
-                        <div className={`text-xs ${active ? "text-white/70" : "text-slate-500"}`}>
-                          {resLeft[r]} left
-                        </div>
+                        <div className={`text-xs ${active ? "text-white/70" : "text-slate-700"}`}>{resLeft[r]} left</div>
                       </div>
                     </button>
                   );
@@ -463,7 +472,7 @@ export default function BoardEditor({
                   type="button"
                   onClick={() => setBrush("erase")}
                   className={`shrink-0 rounded-2xl border px-3 py-2 flex items-center gap-2 shadow-sm transition ${
-                    brush === "erase" ? "bg-black text-white border-black" : "bg-white hover:shadow-md"
+                    brush === "erase" ? "bg-slate-900 text-white border-slate-900" : "bg-white hover:shadow-md"
                   }`}
                   title="Erase (clear res+num)"
                 >
@@ -472,39 +481,29 @@ export default function BoardEditor({
                   </span>
                   <div className="text-left leading-tight">
                     <div className="text-sm font-semibold">Erase</div>
-                    <div className={`text-xs ${brush === "erase" ? "text-white/70" : "text-slate-500"}`}>clear</div>
+                    <div className={`text-xs ${brush === "erase" ? "text-white/70" : "text-slate-700"}`}>clear</div>
                   </div>
                 </button>
               </div>
             </div>
           ) : null}
-        </div>
 
-        {/* MAIN: Board + Metrics (metrics to the bottom on mobile, right on desktop) */}
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-3">
           {/* BOARD */}
           <div
             data-board-wrap="1"
             ref={hostRef}
-            className="relative rounded-3xl border bg-slate-100 shadow-sm p-2 sm:p-3 overflow-hidden w-full"
+            className="relative rounded-3xl border bg-slate-100 shadow-sm p-0 sm:p-2 flex justify-center overflow-hidden"
           >
-            {/* wrapper that guarantees no horizontal overflow on mobile */}
-            <div
-              className="relative mx-auto"
-              style={{
-                width: "100%",
-                maxWidth: CANVAS_W,
-                aspectRatio: `${CANVAS_W} / ${CANVAS_H}`,
-              }}
-            >
-              {/* inner fixed canvas scaled down */}
+            {/* OUTER wrapper has scaled dimensions → prevents mobile overflow */}
+            <div className="relative mx-auto" style={{ width: scaledW, height: scaledH }}>
+              {/* INNER canvas uses original coords and scales from top-left */}
               <div
-                className="absolute left-1/2 top-0"
+                className="absolute left-0 top-0"
                 style={{
                   width: CANVAS_W,
                   height: CANVAS_H,
-                  transform: `translateX(-50%) scale(${scale})`,
-                  transformOrigin: "top center",
+                  transform: `scale(${scale})`,
+                  transformOrigin: "top left",
                 }}
               >
                 {/* Number popover */}
@@ -522,11 +521,10 @@ export default function BoardEditor({
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <div className="text-sm font-semibold">Choose number</div>
-                        <div className="text-xs text-slate-500">
+                        <div className="text-xs text-slate-700">
                           {selectedTile ? (
                             <>
-                              Tile{" "}
-                              <span className="font-mono font-semibold">{fieldLabel(selectedTile.q, selectedTile.r)}</span>{" "}
+                              Tile <span className="font-mono font-semibold">{fieldLabel(selectedTile.q, selectedTile.r)}</span>{" "}
                               {selectedTile.res ? `· ${resLabel(selectedTile.res)}` : "· (empty)"}
                             </>
                           ) : (
@@ -573,7 +571,7 @@ export default function BoardEditor({
                             className={`rounded-xl border px-3 py-2 text-sm font-mono transition ${
                               disabled ? "opacity-40 cursor-not-allowed" : "bg-white hover:bg-slate-50"
                             } ${isRed(n) ? "text-red-600 font-semibold" : ""} ${
-                              isCurrent ? "bg-black text-white hover:bg-black" : ""
+                              isCurrent ? "bg-slate-900 text-white hover:bg-slate-900" : ""
                             }`}
                             type="button"
                             onClick={() => {
@@ -582,7 +580,7 @@ export default function BoardEditor({
                             }}
                           >
                             {n}
-                            <span className="ml-2 text-xs text-slate-400">{isCurrent ? "" : `×${stock}`}</span>
+                            <span className="ml-2 text-xs text-slate-500">{isCurrent ? "" : `×${stock}`}</span>
                           </button>
                         );
                       })}
@@ -601,7 +599,6 @@ export default function BoardEditor({
                   const p = axialToPixel(t.q, t.r, size);
                   const cx = p.x + offsetX;
                   const cy = p.y + offsetY;
-
                   const isSel = selected?.q === t.q && selected?.r === t.r;
 
                   return (
@@ -650,11 +647,9 @@ export default function BoardEditor({
                     return (
                       <g key={`hex-${t.q},${t.r}`}>
                         <polygon points={poly} fill={resColor(t.res)} stroke="#2b2b2b" strokeWidth={1.2} />
-
                         <text x={cx} y={cy - 26} textAnchor="middle" fontSize="11" fill="#111">
                           {fieldLabel(t.q, t.r)}
                         </text>
-
                         <text x={cx} y={cy - 4} textAnchor="middle" fontSize="22">
                           {resIcon(t.res)}
                         </text>
@@ -672,7 +667,7 @@ export default function BoardEditor({
                         </text>
 
                         {t.num != null && t.res && t.res !== "wueste" ? (
-                          <text x={cx} y={cy + 46} textAnchor="middle" fontSize="10" fill="#64748b">
+                          <text x={cx} y={cy + 46} textAnchor="middle" fontSize="10" fill="#475569">
                             pips {pipValue(t.num)}
                           </text>
                         ) : null}
@@ -680,7 +675,6 @@ export default function BoardEditor({
                     );
                   })}
 
-                  {/* markers */}
                   {markersOn
                     ? startSpots.map((v) => {
                         const mx = v.x + offsetX;
@@ -688,15 +682,7 @@ export default function BoardEditor({
                         return (
                           <g key={`m-${v.id}`}>
                             <circle cx={mx} cy={my} r={13} fill="#111" opacity={0.92} />
-                            <circle
-                              cx={mx}
-                              cy={my}
-                              r={14}
-                              fill="transparent"
-                              stroke="#fff"
-                              strokeWidth={1.8}
-                              opacity={0.95}
-                            />
+                            <circle cx={mx} cy={my} r={14} fill="transparent" stroke="#fff" strokeWidth={1.8} opacity={0.95} />
                             <text x={mx} y={my + 4} textAnchor="middle" fontSize="11" fill="#fff" fontWeight={800}>
                               {v.rank}
                             </text>
@@ -708,73 +694,69 @@ export default function BoardEditor({
               </div>
             </div>
           </div>
-
-          {/* METRICS */}
-          <aside className="space-y-3">
-            <div className="rounded-3xl border bg-white shadow-sm p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-sm font-semibold">Balance</div>
-                  <div className="text-xs text-slate-500">Higher = more even</div>
-                </div>
-
-                <div
-                  className={`h-14 w-20 rounded-2xl ${balanceColor(metrics.score)} flex flex-col items-center justify-center text-white`}
-                >
-                  <div className="text-2xl font-extrabold leading-none">{balance.text}</div>
-                  <div className="text-[11px] font-semibold opacity-90">{balance.tag}</div>
-                </div>
-              </div>
-
-              <div className="mt-3 text-xs text-slate-600">
-                If balance is ≥ 90, we show <span className="font-semibold">&gt;90 • Excellent</span>.
-              </div>
-            </div>
-
-            <div className="rounded-3xl border bg-white shadow-sm p-4">
-              <div className="text-sm font-semibold">Resource Strength</div>
-              <div className="mt-3 space-y-2">
-               {(["holz", "lehm", "schaf", "getreide", "stein"] as Resource[]).map((r) => {
-  const v = metrics.strengths[r] ?? 0;
-
-  const max = Math.max(
-    1,
-    ...(["holz", "lehm", "schaf", "getreide", "stein"] as Resource[]).map(
-      (rr) => metrics.strengths[rr] ?? 0
-    )
-  );
-                  const pct = Math.round((v / max) * 100);
-                  return (
-                    <div key={r} className="space-y-1">
-                      <div className="flex items-center justify-between text-xs text-slate-600">
-                        <span className="flex items-center gap-2">
-                          <span className="inline-flex w-7 justify-center">{resIcon(r)}</span>
-                          <span>{resLabel(r)}</span>
-                        </span>
-                        <span className="font-mono">{v}</span>
-                      </div>
-                      <div className="h-2 rounded-full bg-slate-200 overflow-hidden">
-                        <div className="h-full" style={{ width: `${pct}%`, background: resColor(r) }} />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              <div className="mt-2 text-xs text-slate-500">
-                Strength = sum of pips (6/8=5 … 2/12=1) across all tiles of that resource.
-              </div>
-            </div>
-
-            <div className="rounded-3xl border bg-white shadow-sm p-4">
-              <div className="text-sm font-semibold">Notes</div>
-              <ul className="mt-2 text-sm text-slate-600 list-disc pl-5 space-y-1">
-                <li>Super Search and Best Starting Positions can trigger an ad overlay (placeholder).</li>
-                <li>Markers show settlement vertices only (hex corners).</li>
-                <li>Mobile: board scales to the screen width (no right overflow).</li>
-              </ul>
-            </div>
-          </aside>
         </div>
+
+        {/* RIGHT */}
+        <aside className="space-y-3">
+          <div className="rounded-3xl border bg-white shadow-sm p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold">Balance</div>
+                <div className="text-xs text-slate-700">Higher = more even</div>
+              </div>
+
+              <div className={`h-14 w-24 rounded-2xl ${balanceColor(metrics.score)} flex flex-col items-center justify-center text-white`}>
+                <div className="text-2xl font-extrabold leading-none">{balance.text}</div>
+                <div className="text-[11px] font-semibold opacity-95">{balance.tag}</div>
+              </div>
+            </div>
+
+            <div className="mt-3 text-xs text-slate-800">
+              If balance is ≥ 90, we show <span className="font-semibold">&gt;90 • Excellent</span>.
+            </div>
+          </div>
+
+          <div className="rounded-3xl border bg-white shadow-sm p-4">
+            <div className="text-sm font-semibold">Resource Strength</div>
+            <div className="mt-3 space-y-2">
+              {(["holz", "lehm", "schaf", "getreide", "stein"] as Resource[]).map((r) => {
+                const v = metrics.strengths[r] ?? 0;
+                const max = Math.max(
+                  1,
+                  ...(["holz", "lehm", "schaf", "getreide", "stein"] as Resource[]).map((rr) => metrics.strengths[rr] ?? 0)
+                );
+                const pct = Math.round((v / max) * 100);
+
+                return (
+                  <div key={r} className="space-y-1">
+                    <div className="flex items-center justify-between text-xs text-slate-800">
+                      <span className="flex items-center gap-2">
+                        <span className="inline-flex w-7 justify-center">{resIcon(r)}</span>
+                        <span>{resLabel(r)}</span>
+                      </span>
+                      <span className="font-mono">{v}</span>
+                    </div>
+                    <div className="h-2 rounded-full bg-slate-200 overflow-hidden">
+                      <div className="h-full" style={{ width: `${pct}%`, background: resColor(r) }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="mt-2 text-xs text-slate-700">
+              Strength = sum of pips (6/8=5 … 2/12=1) across all tiles of that resource.
+            </div>
+          </div>
+
+          <div className="rounded-3xl border bg-white shadow-sm p-4">
+            <div className="text-sm font-semibold">Tips</div>
+            <ul className="mt-2 text-sm text-slate-800 list-disc pl-5 space-y-1">
+              <li>AI Super Search tries multiple random boards and picks the best.</li>
+              <li>Best Starting Positions shows markers on the map (no list).</li>
+              <li>Ads may not show until AdSense approval completes.</li>
+            </ul>
+          </div>
+        </aside>
       </div>
     </>
   );

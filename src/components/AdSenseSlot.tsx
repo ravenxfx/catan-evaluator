@@ -1,54 +1,49 @@
+// src/components/AdSenseSlot.tsx
 "use client";
 
 import React from "react";
 
 declare global {
   interface Window {
-    adsbygoogle?: any[];
+    adsbygoogle?: unknown[];
   }
 }
 
+const ADSENSE_CLIENT = "ca-pub-4388511727175069";
+
 export function AdSenseSlot({
   slot,
+  className,
   format = "auto",
-  responsive = true,
-  className = "",
+  fullWidthResponsive = true,
   style,
 }: {
-  slot: string; // ca-pub Slot-ID
-  format?: string;
-  responsive?: boolean;
+  slot: string;
   className?: string;
+  format?: string;
+  fullWidthResponsive?: boolean;
   style?: React.CSSProperties;
 }) {
+  const insRef = React.useRef<HTMLModElement | null>(null);
+
   React.useEffect(() => {
+    // Try to request an ad render. This can fail silently (adblock, not approved yet, etc.)
     try {
-      window.adsbygoogle = window.adsbygoogle || [];
-      window.adsbygoogle.push({});
+      (window.adsbygoogle = window.adsbygoogle || []).push({});
     } catch {
-      // ignore (adblock / SSR / etc.)
+      // ignore
     }
   }, [slot]);
 
-  const client = process.env.NEXT_PUBLIC_ADSENSE_CLIENT;
-
-  if (!client) {
-    // dev fallback (keine Ads)
-    return (
-      <div className={`rounded-2xl border bg-slate-50 p-4 text-sm text-slate-600 ${className}`} style={style}>
-        AdSense disabled (missing <span className="font-mono">NEXT_PUBLIC_ADSENSE_CLIENT</span>).
-      </div>
-    );
-  }
-
   return (
     <ins
-      className={`adsbygoogle block ${className}`}
-      style={style ?? { display: "block" }}
-      data-ad-client={client}
+      ref={insRef as any}
+      className={`adsbygoogle block ${className ?? ""}`}
+      style={{ display: "block", ...style }}
+      data-ad-client={ADSENSE_CLIENT}
       data-ad-slot={slot}
       data-ad-format={format}
-      data-full-width-responsive={responsive ? "true" : "false"}
+      data-full-width-responsive={fullWidthResponsive ? "true" : "false"}
     />
   );
 }

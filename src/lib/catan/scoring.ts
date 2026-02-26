@@ -1,24 +1,6 @@
-import type { PlayerCount, Resource, Tile } from "./types";
-import { NUMBER_COUNTS, RESOURCE_COUNTS } from "./types";
+// src/lib/catan/scoring.ts
+import { NUMBER_COUNTS, PlayerCount, Resource, RESOURCE_COUNTS, Tile } from "./types";
 import { pipValue } from "./pips";
-
-/**
- * Default empty board (radius 2 => 19 tiles)
- */
-export function makeDefaultTiles(): Tile[] {
-  const tiles: Tile[] = [];
-  const R = 2;
-  for (let q = -R; q <= R; q++) {
-    for (let r = -R; r <= R; r++) {
-      const s = -q - r;
-      if (Math.max(Math.abs(q), Math.abs(r), Math.abs(s)) <= R) {
-        tiles.push({ q, r, res: null, num: null });
-      }
-    }
-  }
-  tiles.sort((a, b) => (a.r !== b.r ? a.r - b.r : a.q - b.q));
-  return tiles;
-}
 
 /**
  * Resource Strength = sum of pipValue across all tiles of that resource.
@@ -42,13 +24,9 @@ export function resourceStrength(tiles: Tile[]): Record<Resource, number> {
 
 /**
  * Balance Score 0..100
- * - compares how evenly expected production is distributed across resources.
- * - 100 = perfectly even, 0 = super skewed.
  */
 export function balanceScore(tiles: Tile[]): { score: number; strengths: Record<Resource, number> } {
   const strengths = resourceStrength(tiles);
-
-  // only 5 resources matter (desert excluded)
   const vals = (["holz", "lehm", "schaf", "getreide", "stein"] as Resource[]).map((r) => strengths[r]);
 
   const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
@@ -56,17 +34,14 @@ export function balanceScore(tiles: Tile[]): { score: number; strengths: Record<
 
   const variance = vals.reduce((acc, v) => acc + (v - mean) ** 2, 0) / vals.length;
   const stdev = Math.sqrt(variance);
-
-  // coefficient of variation
   const cv = stdev / mean;
 
-  // map cv -> score; cv 0 => 100; cv 0.6 => ~0 (clamp)
   const raw = 100 * (1 - Math.min(1, cv / 0.6));
   return { score: Math.max(0, Math.min(100, Math.round(raw))), strengths };
 }
 
 export type ScoredVertex = {
-  id: string; // stable key
+  id: string;
   x: number;
   y: number;
   adjacent: { res: Resource; num: number | null; tileKey: string }[];
@@ -98,18 +73,10 @@ function roundKey(x: number, y: number) {
   return `${rx},${ry}`;
 }
 
-/**
- * Score settlement vertices (hex corners).
- * Desert counts like "missing tile" (same penalty as outside).
- */
 export function scoreVertices(tiles: Tile[], size = 58): ScoredVertex[] {
   const vmap = new Map<
     string,
-    {
-      x: number;
-      y: number;
-      adj: { res: Resource; num: number | null; tileKey: string }[];
-    }
+    { x: number; y: number; adj: { res: Resource; num: number | null; tileKey: string }[] }
   >();
 
   for (const t of tiles) {
@@ -122,11 +89,8 @@ export function scoreVertices(tiles: Tile[], size = 58): ScoredVertex[] {
       const cur = vmap.get(k);
       const entry = { res: t.res, num: t.num, tileKey: tileKey(t.q, t.r) };
 
-      if (!cur) {
-        vmap.set(k, { x: c.x, y: c.y, adj: [entry] });
-      } else {
-        if (!cur.adj.some((a) => a.tileKey === entry.tileKey)) cur.adj.push(entry);
-      }
+      if (!cur) vmap.set(k, { x: c.x, y: c.y, adj: [entry] });
+      else if (!cur.adj.some((a) => a.tileKey === entry.tileKey)) cur.adj.push(entry);
     }
   }
 
@@ -134,12 +98,10 @@ export function scoreVertices(tiles: Tile[], size = 58): ScoredVertex[] {
 
   for (const [k, v] of vmap.entries()) {
     const resourceAdj = v.adj.filter((a) => a.res !== "wueste");
-    const resourceCount = resourceAdj.length; // 0..3
+    const resourceCount = resourceAdj.length;
     if (resourceCount === 0) continue;
 
     const base = resourceAdj.reduce((sum, a) => sum + pipValue(a.num), 0);
-
-    // desert counts like outside => factor by resourceCount/3
     const factor = resourceCount / 3;
 
     const distinct = new Set(resourceAdj.map((a) => a.res)).size;
@@ -147,13 +109,7 @@ export function scoreVertices(tiles: Tile[], size = 58): ScoredVertex[] {
 
     const score = (base + diversityBonus) * factor;
 
-    scored.push({
-      id: k,
-      x: v.x,
-      y: v.y,
-      adjacent: resourceAdj,
-      score,
-    });
+    scored.push({ id: k, x: v.x, y: v.y, adjacent: resourceAdj, score });
   }
 
   scored.sort((a, b) => b.score - a.score);
@@ -170,9 +126,6 @@ export function bestStartSpots(tiles: Tile[], playerCount: PlayerCount) {
   }));
 }
 
-/**
- * Randomize board respecting official counts.
- */
 export function randomizeBoard(tiles: Tile[], rng = Math.random): Tile[] {
   const next = tiles.map((t) => ({ ...t }));
 
@@ -196,11 +149,7 @@ export function randomizeBoard(tiles: Tile[], rng = Math.random): Tile[] {
 
   let ptr = 0;
   for (const t of next) {
-    if (t.res === "wueste") t.num = null;
-    else {
-      t.num = numPool[ptr] ?? null;
-      ptr++;
-    }
+    t.num = t.res === "wueste" ? null : (numPool[ptr++] ?? null);
   }
 
   return next;
@@ -211,4 +160,18 @@ function shuffle<T>(arr: T[], rng: () => number) {
     const j = Math.floor(rng() * (i + 1));
     [arr[i], arr[j]] = [arr[j], arr[i]];
   }
+}
+
+/** ✅ Exported and used across pages */
+export function makeDefaultTiles(): Tile[] {
+  const tiles: Tile[] = [];
+  const R = 2;
+  for (let q = -R; q <= R; q++) {
+    for (let r = -R; r <= R; r++) {
+      const s = -q - r;
+      if (Math.max(Math.abs(q), Math.abs(r), Math.abs(s)) <= R) tiles.push({ q, r, res: null, num: null });
+    }
+  }
+  tiles.sort((a, b) => (a.r !== b.r ? a.r - b.r : a.q - b.q));
+  return tiles;
 }
