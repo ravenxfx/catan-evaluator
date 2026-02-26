@@ -329,7 +329,7 @@ export default function BoardEditor({
     subtitle="One moment…"
     onDone={finishGate}
   />
-) : null} /> : null}
+) : null}
 
       {/* Mobile first: options on top, board big, metrics below (on mobile) */}
       <div className="space-y-3">
