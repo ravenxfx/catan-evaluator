@@ -4,14 +4,14 @@ import Script from "next/script";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Catan Boards – Randomizer & Evaluator",
+  title: "Catan Boards – Generator & Evaluator",
   description:
-    "Find balanced Catan boards, randomize layouts, evaluate balance score, and reveal best starting positions.",
+    "Generate balanced Catan boards, evaluate balance score, and reveal best starting positions.",
   keywords: [
     "Catan",
     "Settlers of Catan",
     "Catan board generator",
-    "Catan randomizer",
+    "Catan generator",
     "Catan balance",
     "best starting positions Catan",
     "Catan map",
@@ -27,11 +27,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <head>
-        {/* AdSense loader (also used for ownership verification) */}
-        <Script
-          id="adsense"
+        {/* AdSense verification + loader (exact snippet structure) */}
+        <script
           async
-          strategy="afterInteractive"
           src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4388511727175069"
           crossOrigin="anonymous"
         />

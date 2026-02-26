@@ -9,9 +9,9 @@ import { isRed, pipValue } from "@/lib/catan/pips";
 import { NUMBER_COUNTS, NUMBER_LIST, PlayerCount, Resource, RESOURCE_COUNTS, Tile } from "@/lib/catan/types";
 
 // ✅ Put your AdSense SLOT IDs here:
-const SLOT_GATE_SUPERSEARCH = "0000000000"; // overlay slot
-const SLOT_GATE_STARTSPOTS = "0000000001"; // overlay slot
-const SLOT_PAGE_BANNER = "0000000002"; // page banner slot
+const SLOT_GATE_SUPERSEARCH = "0000000000";
+const SLOT_GATE_STARTSPOTS = "0000000001";
+const SLOT_BOTTOM_BANNER = "0000000002";
 
 const CANVAS_W = 920;
 const CANVAS_H = 620;
@@ -158,17 +158,20 @@ export default function BoardEditor({
 
   const hostRef = React.useRef<HTMLDivElement | null>(null);
   const [scale, setScale] = React.useState(1);
+  const [containerW, setContainerW] = React.useState<number>(CANVAS_W);
 
-  // ✅ Mobile overflow fix:
-  // - we compute scale from container width
-  // - and ALSO set the OUTER wrapper to scaled width/height so it doesn't overflow layout
+  // ✅ REAL mobile overflow fix:
+  // - measure container width
+  // - scale to fit that width
+  // - outer wrapper uses scaledW/scaledH so it cannot overflow
   React.useEffect(() => {
     function recompute() {
       const el = hostRef.current;
       if (!el) return;
       const w = el.clientWidth;
-      const s = Math.min(1, (w - 8) / CANVAS_W);
-      setScale(Number.isFinite(s) ? Math.max(0.62, s) : 1);
+      setContainerW(w);
+      const s = Math.min(1, (w - 2) / CANVAS_W);
+      setScale(Number.isFinite(s) ? Math.max(0.6, s) : 1);
     }
     recompute();
     window.addEventListener("resize", recompute);
@@ -236,7 +239,7 @@ export default function BoardEditor({
     setMarkersOn(false);
   }
 
-  function randomize() {
+  function generate() {
     onChange(randomizeBoard(tiles));
     setSelected(null);
     setSelectedCenter(null);
@@ -244,7 +247,6 @@ export default function BoardEditor({
   }
 
   function aiSuperSearch90() {
-    // simple heuristic: try up to N random boards, keep the best; stop early if >= 90
     const max = 260;
     let best = tiles;
     let bestScore = balanceScore(tiles).score;
@@ -315,7 +317,6 @@ export default function BoardEditor({
     onChange(next);
   }
 
-  // close popover on outside click
   React.useEffect(() => {
     function onDown(e: MouseEvent) {
       const el = e.target as HTMLElement;
@@ -329,7 +330,8 @@ export default function BoardEditor({
   }, []);
 
   const balance = prettyBalance(metrics.score);
-  const scaledW = Math.round(CANVAS_W * scale);
+
+  const scaledW = Math.min(containerW, Math.round(CANVAS_W * scale));
   const scaledH = Math.round(CANVAS_H * scale);
 
   return (
@@ -338,25 +340,23 @@ export default function BoardEditor({
         <AdGate seconds={3} title="Sponsored" subtitle="One moment…" slot={gate.slot} onDone={finishGate} />
       ) : null}
 
-      {/* Mobile-first: controls on top, board big, cards below; desktop: board + sidebar */}
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-3">
         {/* LEFT */}
         <div className="space-y-3">
-          {/* Header + primary actions */}
           <div className="rounded-3xl border bg-white shadow-sm p-3">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div className="min-w-0">
                 <div className="text-sm font-semibold">{mode === "find" ? "Find Boards" : "Evaluate Board"}</div>
-                <div className="text-xs text-slate-700">
+                <div className="text-xs text-slate-800">
                   {mode === "find"
-                    ? "Randomize boards and reveal best start markers on the map."
+                    ? "Generate boards and reveal best start markers on the map."
                     : "Paint resources and set numbers to test balance and start positions."}
                 </div>
               </div>
 
               <div className="flex items-center gap-2">
-                <button onClick={randomize} className={primaryBtn} type="button">
-                  🎲 Randomize
+                <button onClick={generate} className={primaryBtn} type="button">
+                  🎲 Generate
                 </button>
                 <button onClick={resetBoard} className={secondaryBtn} type="button">
                   Reset
@@ -364,19 +364,13 @@ export default function BoardEditor({
               </div>
             </div>
 
-            {/* Page banner ad (optional) */}
-            <div className="mt-3 rounded-2xl border bg-white p-3">
-              <div className="text-[11px] text-slate-600 mb-2">Advertisement</div>
-              <AdSenseSlot slot={SLOT_PAGE_BANNER} className="min-h-[90px]" />
-            </div>
-
             {mode === "find" ? (
               <div className="mt-3 rounded-3xl border bg-slate-50 p-3">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                  <div className="text-sm font-semibold">Options</div>
+                  <div className="text-sm font-semibold text-slate-900">Options</div>
 
                   <div className="flex items-center gap-2">
-                    <div className="text-xs text-slate-800">Players</div>
+                    <div className="text-xs text-slate-900">Players</div>
                     <div className="flex gap-2">
                       <button
                         type="button"
@@ -411,26 +405,24 @@ export default function BoardEditor({
 
                   <button
                     type="button"
-                    className="rounded-2xl border py-3 font-semibold shadow-sm hover:bg-white bg-white active:scale-[0.99]"
+                    className="rounded-2xl border py-3 font-semibold shadow-sm hover:bg-white bg-white active:scale-[0.99] text-slate-900"
                     onClick={() => runAfterAd("showMarkers")}
                   >
                     Best Starting Positions
                   </button>
                 </div>
 
-                <div className="mt-2 text-xs text-slate-700">
-                  Ads appear when you press these buttons.
-                </div>
+                <div className="mt-2 text-xs text-slate-800">Ads appear when you press these buttons.</div>
               </div>
             ) : null}
           </div>
 
-          {/* Builder brush */}
+          {/* Brush (builder only) */}
           {mode === "builder" ? (
             <div className="rounded-3xl border bg-white shadow-sm p-3">
               <div className="flex items-center justify-between gap-2">
-                <div className="text-sm font-semibold">Brush</div>
-                <div className="text-xs text-slate-700">Tap hex to paint • Tap again to pick number</div>
+                <div className="text-sm font-semibold text-slate-900">Brush</div>
+                <div className="text-xs text-slate-800">Tap hex to paint • Tap again to pick number</div>
               </div>
 
               <div className="mt-3 flex items-center gap-2 overflow-x-auto pb-1">
@@ -461,8 +453,8 @@ export default function BoardEditor({
                         {resIcon(r)}
                       </span>
                       <div className="text-left leading-tight">
-                        <div className="text-sm font-semibold">{resLabel(r)}</div>
-                        <div className={`text-xs ${active ? "text-white/70" : "text-slate-700"}`}>{resLeft[r]} left</div>
+                        <div className="text-sm font-semibold text-slate-900">{resLabel(r)}</div>
+                        <div className={`text-xs ${active ? "text-white/70" : "text-slate-800"}`}>{resLeft[r]} left</div>
                       </div>
                     </button>
                   );
@@ -480,8 +472,8 @@ export default function BoardEditor({
                     🧽
                   </span>
                   <div className="text-left leading-tight">
-                    <div className="text-sm font-semibold">Erase</div>
-                    <div className={`text-xs ${brush === "erase" ? "text-white/70" : "text-slate-700"}`}>clear</div>
+                    <div className="text-sm font-semibold text-slate-900">Erase</div>
+                    <div className={`text-xs ${brush === "erase" ? "text-white/70" : "text-slate-800"}`}>clear</div>
                   </div>
                 </button>
               </div>
@@ -494,9 +486,8 @@ export default function BoardEditor({
             ref={hostRef}
             className="relative rounded-3xl border bg-slate-100 shadow-sm p-0 sm:p-2 flex justify-center overflow-hidden"
           >
-            {/* OUTER wrapper has scaled dimensions → prevents mobile overflow */}
+            {/* Outer wrapper uses scaled size so it cannot overflow the page */}
             <div className="relative mx-auto" style={{ width: scaledW, height: scaledH }}>
-              {/* INNER canvas uses original coords and scales from top-left */}
               <div
                 className="absolute left-0 top-0"
                 style={{
@@ -506,7 +497,6 @@ export default function BoardEditor({
                   transformOrigin: "top left",
                 }}
               >
-                {/* Number popover */}
                 {selected && selectedCenter && (
                   <div
                     data-popover="num"
@@ -520,8 +510,8 @@ export default function BoardEditor({
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <div className="text-sm font-semibold">Choose number</div>
-                        <div className="text-xs text-slate-700">
+                        <div className="text-sm font-semibold text-slate-900">Choose number</div>
+                        <div className="text-xs text-slate-800">
                           {selectedTile ? (
                             <>
                               Tile <span className="font-mono font-semibold">{fieldLabel(selectedTile.q, selectedTile.r)}</span>{" "}
@@ -580,7 +570,7 @@ export default function BoardEditor({
                             }}
                           >
                             {n}
-                            <span className="ml-2 text-xs text-slate-500">{isCurrent ? "" : `×${stock}`}</span>
+                            <span className="ml-2 text-xs text-slate-600">{isCurrent ? "" : `×${stock}`}</span>
                           </button>
                         );
                       })}
@@ -594,11 +584,12 @@ export default function BoardEditor({
                   </div>
                 )}
 
-                {/* Click hit areas */}
+                {/* Hit areas */}
                 {tiles.map((t) => {
                   const p = axialToPixel(t.q, t.r, size);
                   const cx = p.x + offsetX;
                   const cy = p.y + offsetY;
+
                   const isSel = selected?.q === t.q && selected?.r === t.r;
 
                   return (
@@ -630,7 +621,6 @@ export default function BoardEditor({
                   );
                 })}
 
-                {/* SVG visuals */}
                 <svg
                   width={CANVAS_W}
                   height={CANVAS_H}
@@ -667,7 +657,7 @@ export default function BoardEditor({
                         </text>
 
                         {t.num != null && t.res && t.res !== "wueste" ? (
-                          <text x={cx} y={cy + 46} textAnchor="middle" fontSize="10" fill="#475569">
+                          <text x={cx} y={cy + 46} textAnchor="middle" fontSize="10" fill="#334155">
                             pips {pipValue(t.num)}
                           </text>
                         ) : null}
@@ -694,6 +684,12 @@ export default function BoardEditor({
               </div>
             </div>
           </div>
+
+          {/* ✅ Ads at bottom of page (below board & controls) */}
+          <div className="rounded-3xl border bg-white shadow-sm p-4">
+            <div className="text-[11px] text-slate-700 mb-2">Advertisement</div>
+            <AdSenseSlot slot={SLOT_BOTTOM_BANNER} className="min-h-[100px]" />
+          </div>
         </div>
 
         {/* RIGHT */}
@@ -701,13 +697,13 @@ export default function BoardEditor({
           <div className="rounded-3xl border bg-white shadow-sm p-4">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <div className="text-sm font-semibold">Balance</div>
-                <div className="text-xs text-slate-700">Higher = more even</div>
+                <div className="text-sm font-semibold text-slate-900">Balance</div>
+                <div className="text-xs text-slate-800">Higher = more even</div>
               </div>
 
               <div className={`h-14 w-24 rounded-2xl ${balanceColor(metrics.score)} flex flex-col items-center justify-center text-white`}>
-                <div className="text-2xl font-extrabold leading-none">{balance.text}</div>
-                <div className="text-[11px] font-semibold opacity-95">{balance.tag}</div>
+                <div className="text-2xl font-extrabold leading-none">{prettyBalance(metrics.score).text}</div>
+                <div className="text-[11px] font-semibold opacity-95">{prettyBalance(metrics.score).tag}</div>
               </div>
             </div>
 
@@ -717,13 +713,13 @@ export default function BoardEditor({
           </div>
 
           <div className="rounded-3xl border bg-white shadow-sm p-4">
-            <div className="text-sm font-semibold">Resource Strength</div>
+            <div className="text-sm font-semibold text-slate-900">Resource Strength</div>
             <div className="mt-3 space-y-2">
-              {(["holz", "lehm", "schaf", "getreide", "stein"] as Resource[]).map((r) => {
+              {(["holz", "lehm", "schaf", "getreide", "stein"] as const).map((r) => {
                 const v = metrics.strengths[r] ?? 0;
                 const max = Math.max(
                   1,
-                  ...(["holz", "lehm", "schaf", "getreide", "stein"] as Resource[]).map((rr) => metrics.strengths[rr] ?? 0)
+                  ...(["holz", "lehm", "schaf", "getreide", "stein"] as const).map((rr) => metrics.strengths[rr] ?? 0)
                 );
                 const pct = Math.round((v / max) * 100);
 
@@ -743,18 +739,9 @@ export default function BoardEditor({
                 );
               })}
             </div>
-            <div className="mt-2 text-xs text-slate-700">
+            <div className="mt-2 text-xs text-slate-800">
               Strength = sum of pips (6/8=5 … 2/12=1) across all tiles of that resource.
             </div>
-          </div>
-
-          <div className="rounded-3xl border bg-white shadow-sm p-4">
-            <div className="text-sm font-semibold">Tips</div>
-            <ul className="mt-2 text-sm text-slate-800 list-disc pl-5 space-y-1">
-              <li>AI Super Search tries multiple random boards and picks the best.</li>
-              <li>Best Starting Positions shows markers on the map (no list).</li>
-              <li>Ads may not show until AdSense approval completes.</li>
-            </ul>
           </div>
         </aside>
       </div>
