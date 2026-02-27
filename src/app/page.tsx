@@ -1,66 +1,66 @@
-// src/app/page.tsx
-import Link from "next/link";
+"use client";
 
-export default function Home() {
+import React from "react";
+
+export default function HomePage() {
+  const chips = [
+    "Catan board generator",
+    "Balanced Catan board",
+    "Fair Catan setup",
+    "Catan randomizer",
+    "Best starting positions",
+    "Settlers of Catan map",
+    "Catan pips",
+    "Generador de tablero Catan",
+    "Générateur plateau Catan",
+    "Generatore tabellone Catan",
+    "Катaн поле генератор",
+  ];
+
   return (
-    <main className="min-h-[100dvh]">
-      <div className="mx-auto w-full max-w-5xl px-4 py-10">
-        <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-900">
+    <main className="min-h-dvh bg-slate-50">
+      <div className="mx-auto w-full max-w-5xl px-4 py-6">
+        <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-950">
           Catan Boards
         </h1>
-        <p className="mt-2 text-slate-800">
-          Randomize and evaluate <span className="font-semibold">balanced Catan</span> boards. Reveal best starting
-          positions, compare balance, and build custom layouts.
+
+        <p className="mt-2 text-base sm:text-lg text-slate-800">
+          Generate fairer Settlers of Catan boards, check balance, and reveal best starting positions.
+          Use <span className="font-semibold">AI Super Search</span> to find more even setups for your game night.
         </p>
 
-        <div className="mt-6 flex flex-col sm:flex-row gap-3">
-          <Link
+        <div className="mt-5 grid grid-cols-1 gap-3">
+          <a
             href="/random"
-            className="rounded-2xl bg-slate-900 text-white px-6 py-4 font-semibold shadow-sm hover:opacity-95"
+            className="rounded-3xl bg-slate-900 text-white px-5 py-4 text-lg font-semibold shadow-sm hover:shadow-md transition"
           >
-            🎲 Find Boards (Randomizer)
-          </Link>
-          <Link
+            🎲 Find Boards (Generator)
+          </a>
+
+          <a
             href="/evaluate"
-            className="rounded-2xl border bg-white text-slate-900 px-6 py-4 font-semibold shadow-sm hover:bg-slate-50"
+            className="rounded-3xl border bg-white text-slate-950 px-5 py-4 text-lg font-semibold shadow-sm hover:shadow-md transition"
           >
             🧩 Evaluate Board (Builder)
-          </Link>
+          </a>
         </div>
 
-        {/* Stylish SEO “tag cloud” (visible, not hidden spam) */}
-        <div className="mt-10 rounded-3xl border bg-white p-5 shadow-sm">
+        <div className="mt-8 rounded-3xl border bg-white p-4 shadow-sm">
           <div className="text-sm font-semibold text-slate-900">Popular searches</div>
           <div className="mt-3 flex flex-wrap gap-2">
-            {[
-              "Catan board generator",
-              "Catan randomizer",
-              "Balanced Catan board",
-              "Best starting positions",
-              "Catan pips",
-              "Fair Catan setup",
-              "Settlers of Catan map",
-              "Catan strategy",
-              "Катан поле генератор",
-              "Catán generador de tablero",
-              "Générateur de plateau Catan",
-              "Generatore tabellone Catan",
-              "カタン ボード 生成",
-              "카탄 보드 생성기",
-              "أداة كاتان لتوليد اللوح",
-            ].map((k) => (
+            {chips.map((c) => (
               <span
-                key={k}
-                className="rounded-full border bg-slate-50 px-3 py-1 text-sm text-slate-800"
+                key={c}
+                className="rounded-full border bg-slate-50 px-3 py-1.5 text-sm font-semibold text-slate-800"
               >
-                {k}
+                {c}
               </span>
             ))}
           </div>
 
-          <p className="mt-4 text-sm text-slate-800">
-            Tip: Use <span className="font-semibold">AI Super Search</span> on the Randomizer page to hunt for
-            high-balance boards (≥ 90).
+          <p className="mt-4 text-sm text-slate-700">
+            Tip: In the generator, press <span className="font-semibold">AI Super Search</span> to discover more balanced boards
+            and then reveal the <span className="font-semibold">best starting positions</span> on the map.
           </p>
         </div>
       </div>
